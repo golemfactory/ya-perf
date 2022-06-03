@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "ya-perf"
+version = "0.0.1"
+description = "Performance analyzing tool for NET"
+authors = ["Wojciech Kargul <wojciech.kargul@golem.network>", "GolemFactory <contact@golem.network>"]
+repository = "https://github.com/golemfactory/ya-perf"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.8"
+
+[tool.poetry.dev-dependencies]
+black = "^22.1"
+
+[tool.black]
+line-length = 100
+target-version = ['py36']
+
+[tool.poe.tasks]
+codestyle = "black --check --diff ."
+typecheck = "mypy --install-types --non-interactive --ignore-missing-imports --warn-unused-ignores --show-error-codes ."
+check = ["codestyle", "typecheck"]

@@ -1,0 +1,9 @@
+/.idea/
+__pycache__/
+.mypy_cache
+.idea
+*.egg-info
+*.log
+
+
+poetry.lock
