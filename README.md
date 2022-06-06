@@ -8,7 +8,7 @@ Performance analyzing tool for NET
 
 | Command line option  | Default | Description                            |
 |----------------------|---------|----------------------------------------|
-| --transfer           | true    | Option to disable test                 |
+| --transfer           | false   | Option to enable test                  |
 | --transfer-file-size | 10      | Sets transferred file size (in Mbytes) |
 
 WARNING: Be aware that large size of transferred files increase total test time.
@@ -19,7 +19,7 @@ Test is only completed when each Provider call others (total number of ping test
 
 | Command line option | Default | Description                                   |
 |---------------------|---------|-----------------------------------------------|
-| --vpn-ping          | true    | Option to disable test                        |
+| --vpn-ping          | false   | Option to enable test                         |
 | --ping-count        | 10      | Specifies the number of ping packets to send. |
 
 * **VPN transfer test** between Providers. Only one transfer test at a time between Providers. Each Provider is engaged in only one call at a time, as a client or a server.
@@ -27,9 +27,9 @@ Test is only completed when each Provider call others (total number of transfer 
 3 nodes (A,B,C) complete 6 tests (A->B, B->A, A->C, C->A, B->C, C->B). In the background script uses `iperf 3.11` as a performance testing tool. Bandwidth is measured on TCP protocol.
 TCP window size is set to 60000 bytes.
 
-| Command line option | Default | Description                                   |
-|---------------------|---------|-----------------------------------------------|
-| --vpn-transfer      | true    | Option to disable test                        |
+| Command line option | Default | Description           |
+|---------------------|---------|-----------------------|
+| --vpn-transfer      | false   | Option to enable test |
 
 ### General options
 
@@ -46,5 +46,5 @@ TCP window size is set to 60000 bytes.
 ### Example
 
 ```bash
-python3 performance.py --num-instances 2 --subnet-tag testnet --transfer true --transfer-file-size 25 --json true
+python3 performance.py --num-instances 2 --subnet-tag testnet --transfer true --transfer-file-size 25 --vpn-ping true --ping-count 5 --vpn-transfer true --json true
 ```
