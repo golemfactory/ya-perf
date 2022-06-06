@@ -11,10 +11,12 @@ from enum import Enum
 import pathlib
 import sys
 
+from yapapi.contrib.strategy import ProviderFilter
 from yapapi.script import Script
 from yapapi.golem import Golem
 from yapapi.payload import vm
 from yapapi.services import Service
+from yapapi.strategy import LeastExpensiveLinearPayuMS
 from yapapi.utils import logger
 
 examples_dir = pathlib.Path(__file__).resolve().parent.parent
@@ -190,10 +192,13 @@ class PerformanceService(Service):
 
                 await asyncio.sleep(1)
 
-                logger.info(f"{self.provider_id}: 🔄 computing on {ip_provider_id[server_ip]}")
+                logger.info(f"{self.provider_id} 🔄 computing on {ip_provider_id[server_ip]}")
 
                 try:
                     if self.vpn_ping:
+                        logger.info(
+                            f"Starting VPN ping test 👀. {self.provider_id} sending {self.ping_count} pings to {ip_provider_id[server_ip]}"
+                        )
                         script = self._ctx.new_script(timeout=timedelta(minutes=3))
                         future_result = script.run(
                             "/bin/bash",
@@ -215,8 +220,14 @@ class PerformanceService(Service):
                                 "rtt_max_ms": data["rtt_max"],
                             }
                         )
+                        logger.info(
+                            f"Finished VPN ping test 🎉. Average ping sent from {self.provider_id} to {ip_provider_id[server_ip]} is {data['rtt_avg']} ms"
+                        )
 
                     if self.vpn_transfer:
+                        logger.info(
+                            f"Starting VPN transfer test 🚌. Client: {self.provider_id}, server: {ip_provider_id[server_ip]}"
+                        )
                         output_file_vpn_transfer = (
                             f"vpn_transfer_client_{client_ip}_to_server_{server_ip}_logs.json"
                         )
@@ -242,23 +253,28 @@ class PerformanceService(Service):
                             f = file.read()
 
                         data = json.loads(f)
+                        bandwidth_sender_mb_s = (
+                            (data["end"]["sum_sent"]["bits_per_second"]) / (8 * 1024 * 1024)
+                        ).__round__(3)
+                        bandwidth_receiver_mb_s = (
+                            (data["end"]["sum_received"]["bits_per_second"]) / (8 * 1024 * 1024)
+                        ).__round__(3)
+
                         vpn_transfer_table.append(
                             {
                                 "client": data["client"],
                                 "server": data["server"],
                                 "p2p_connection": "",
-                                "bandwidth_sender_mb_s": (
-                                    (data["end"]["sum_sent"]["bits_per_second"]) / (8 * 1024 * 1024)
-                                ).__round__(3),
-                                "bandwidth_receiver_mb_s": (
-                                    (data["end"]["sum_received"]["bits_per_second"])
-                                    / (8 * 1024 * 1024)
-                                ).__round__(3),
+                                "bandwidth_sender_mb_s": bandwidth_sender_mb_s,
+                                "bandwidth_receiver_mb_s": bandwidth_receiver_mb_s,
                             }
+                        )
+                        logger.info(
+                            f"Finished VPN transfer test 🎉. Client: {self.provider_id}, server: {ip_provider_id[server_ip]}. Bandwidth: ⬆ sender {bandwidth_sender_mb_s} MByte/s, ⬇ receiver {bandwidth_receiver_mb_s} MByte/s"
                         )
 
                     completion_state[client_ip].add(server_ip)
-                    logger.info(f"{self.provider_id}: ✅ finished on {ip_provider_id[server_ip]}")
+                    logger.info(f"{self.provider_id} ✅ finished on {ip_provider_id[server_ip]}")
 
                 except Exception as error:
                     logger.info(f" 💀💀💀 error: {error}")
@@ -298,11 +314,22 @@ async def main(
     download_json,
     instances=None,
 ):
+    strategy = LeastExpensiveLinearPayuMS()
+
+    with open("providers_list.json") as file:
+        providers = json.load(file)
+
+    if len(providers) != 0:
+        strategy = ProviderFilter(strategy, lambda provider_id: provider_id in providers)
+
     async with Golem(
         budget=1.0,
         subnet_tag=subnet_tag,
         payment_driver=payment_driver,
+        payment_network=payment_network,
+        strategy=strategy,
     ) as golem:
+
         print_env_info(golem)
 
         global network_addresses
@@ -343,6 +370,21 @@ async def main(
 
         cluster.stop()
 
+        if len(transfer_table) != 0:
+            transfer_result_json = json.dumps(transfer_table)
+
+            print(f"{TEXT_COLOR_CYAN}-------------------------------------------------------")
+            print(
+                f"Transfer test with file size: {TEXT_COLOR_GREEN}{transfer_file_size} MB{TEXT_COLOR_CYAN}"
+            )
+            result = pd.read_json(transfer_result_json, orient="records")
+            print(f"{result}{TEXT_COLOR_DEFAULT}")
+
+        if download_json:
+            dt = datetime.now().strftime("%Y-%m-%d_%H.%M.%S")
+            with open(f"transfer_test_result_{dt}.json", "a+") as file:
+                file.write(transfer_result_json)
+
         if len(vpn_ping_table) != 0:
             vpn_ping_result_json = json.dumps(vpn_ping_table)
 
@@ -368,21 +410,6 @@ async def main(
                 dt = datetime.now().strftime("%Y-%m-%d_%H.%M.%S")
                 with open(f"vpn_transfer_test_result_{dt}.json", "a+") as file:
                     file.write(vpn_transfer_result_json)
-
-        if len(transfer_table) != 0:
-            transfer_result_json = json.dumps(transfer_table)
-
-            print(f"{TEXT_COLOR_CYAN}-------------------------------------------------------")
-            print(
-                f"Transfer test with file size: {TEXT_COLOR_GREEN}{transfer_file_size} MB{TEXT_COLOR_CYAN}"
-            )
-            result = pd.read_json(transfer_result_json, orient="records")
-            print(f"{result}{TEXT_COLOR_DEFAULT}")
-
-            if download_json:
-                dt = datetime.now().strftime("%Y-%m-%d_%H.%M.%S")
-                with open(f"transfer_test_result_{dt}.json", "a+") as file:
-                    file.write(transfer_result_json)
 
         shutil.rmtree(".tmp")
 
@@ -436,7 +463,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--json",
-        default=True,
+        default=False,
         type=bool,
         help=("Download results as json files"),
     )
