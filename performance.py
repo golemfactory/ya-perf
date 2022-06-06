@@ -39,6 +39,8 @@ STARTING_TIMEOUT = timedelta(minutes=5)
 # as providers typically won't take offers that expire sooner than 5 minutes in the future
 EXPIRATION_MARGIN = timedelta(minutes=5)
 
+TEMP_PATH = ".tmp"
+
 lock = asyncio.Lock()
 
 # TODO: Get rid of globals
@@ -47,9 +49,9 @@ computation_state_client = {}
 completion_state = {}
 ip_provider_id = {}
 network_addresses = []
-transfer_table = []
-vpn_ping_table = []
-vpn_transfer_table = []
+transfer_list = []
+vpn_ping_list = []
+vpn_transfer_list = []
 
 
 class State(Enum):
@@ -140,7 +142,7 @@ class PerformanceService(Service):
             logger.info(
                 f"Provider: {self.provider_id}. 🎉 Finished transfer test: ⬆ upload {upload} MByte/s, ⬇ download {download} MByte/s"
             )
-            transfer_table.append(
+            transfer_list.append(
                 {
                     "provider_id": self.provider_id,
                     "upload_mb_s": upload,
@@ -209,7 +211,7 @@ class PerformanceService(Service):
 
                         result = (await future_result).stdout
                         data = json.loads(result)
-                        vpn_ping_table.append(
+                        vpn_ping_list.append(
                             {
                                 "client": data["client"],
                                 "server": data["server"],
@@ -260,7 +262,7 @@ class PerformanceService(Service):
                             (data["end"]["sum_received"]["bits_per_second"]) / (8 * 1024 * 1024)
                         ).__round__(3)
 
-                        vpn_transfer_table.append(
+                        vpn_transfer_list.append(
                             {
                                 "client": data["client"],
                                 "server": data["server"],
@@ -335,7 +337,9 @@ async def main(
         global network_addresses
 
         network = await golem.create_network("192.168.0.1/24")
-        os.mkdir(".tmp")
+        if not os.path.exists(TEMP_PATH):
+            os.mkdir(TEMP_PATH)
+
         cluster = await golem.run_service(
             PerformanceService,
             instance_params=[
@@ -370,8 +374,8 @@ async def main(
 
         cluster.stop()
 
-        if len(transfer_table) != 0:
-            transfer_result_json = json.dumps(transfer_table)
+        if len(transfer_list) != 0:
+            transfer_result_json = json.dumps(sorted(transfer_list, key=lambda x: x["provider_id"]))
 
             print(f"{TEXT_COLOR_CYAN}-------------------------------------------------------")
             print(
@@ -385,8 +389,8 @@ async def main(
             with open(f"transfer_test_result_{dt}.json", "a+") as file:
                 file.write(transfer_result_json)
 
-        if len(vpn_ping_table) != 0:
-            vpn_ping_result_json = json.dumps(vpn_ping_table)
+        if len(vpn_ping_list) != 0:
+            vpn_ping_result_json = json.dumps(sorted(vpn_ping_list, key=lambda x: x["client"]))
 
             print(f"{TEXT_COLOR_CYAN}-------------------------------------------------------")
             print("VPN ping test between providers")
@@ -398,8 +402,10 @@ async def main(
                 with open(f"vpn_ping_test_result_{dt}.json", "a+") as file:
                     file.write(vpn_ping_result_json)
 
-        if len(vpn_transfer_table) != 0:
-            vpn_transfer_result_json = json.dumps(vpn_transfer_table)
+        if len(vpn_transfer_list) != 0:
+            vpn_transfer_result_json = json.dumps(
+                sorted(vpn_transfer_list, key=lambda x: x["client"])
+            )
 
             print(f"{TEXT_COLOR_CYAN}-------------------------------------------------------")
             print("VPN transfer test between providers")
@@ -408,10 +414,10 @@ async def main(
 
             if download_json:
                 dt = datetime.now().strftime("%Y-%m-%d_%H.%M.%S")
-                with open(f"vpn_transfer_test_result_{dt}.json", "a+") as file:
-                    file.write(vpn_transfer_result_json)
+            with open(f"vpn_transfer_test_result_{dt}.json", "a+") as file:
+                file.write(vpn_transfer_result_json)
 
-        shutil.rmtree(".tmp")
+            shutil.rmtree(TEMP_PATH)
 
 
 if __name__ == "__main__":
