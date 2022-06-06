@@ -43,6 +43,21 @@ TCP window size is set to 60000 bytes.
 | --log-file                   | ya-perf     | Log file for YAPAPI                                                            |
 | --running-time               | 1200        | Option to set time the instance run before the cluster is stopped (in seconds) |
 
+### Filtering nodes
+You can either use any Providers in subnet (by default) or specify nodes for test. If order to filter nodes input Provider ID in `providers_list.json` file,
+i.e.
+```json
+[
+  "0x83a086e7779c31476eefee36ab8814bca3d35aa2",
+  "0xd2ca30dff73047cb3619416b9de187686c31c6f6",
+  "0xb7925f9378650e7291836ef9249e2fcdf8a378da",
+  "0x02a71376b982cb3752e99252625aa4cc33b7ed3d",
+  "0x0d6beaeec5e3a250ef909ffad58271780a340fea",
+  "0xdf4b685011fb4b061e6ecb1f418d44e6cb3504d6"
+]
+```
+
+
 ### Example
 
 ```bash
