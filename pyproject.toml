@@ -8,6 +8,8 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.8"
+yapapi = "^0.9"
+pandas = "^1.4"
 
 [tool.poetry.dev-dependencies]
 black = "^22.1"

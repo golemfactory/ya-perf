@@ -244,7 +244,9 @@ class PerformanceService(Service):
                         # TODO: Change for stdout to avoid downloading file
                         script = self._ctx.new_script(timeout=timedelta(minutes=3))
                         dt = datetime.now().strftime("%Y-%m-%d_%H.%M.%S")
-                        output_file_vpn_transfer_with_date = f".tmp/{dt}_{output_file_vpn_transfer}"
+                        output_file_vpn_transfer_with_date = (
+                            f"{TEMP_PATH}/{dt}_{output_file_vpn_transfer}"
+                        )
                         script.download_file(
                             f"/golem/output/{output_file_vpn_transfer}",
                             f"{output_file_vpn_transfer_with_date}",
@@ -321,7 +323,7 @@ async def main(
     with open("providers_list.json") as file:
         providers = json.load(file)
 
-    if len(providers) != 0:
+    if providers:
         strategy = ProviderFilter(strategy, lambda provider_id: provider_id in providers)
 
     async with Golem(
@@ -331,14 +333,12 @@ async def main(
         payment_network=payment_network,
         strategy=strategy,
     ) as golem:
-
         print_env_info(golem)
 
         global network_addresses
 
         network = await golem.create_network("192.168.0.1/24")
-        if not os.path.exists(TEMP_PATH):
-            os.mkdir(TEMP_PATH)
+        os.makedirs(TEMP_PATH, exist_ok=True)
 
         cluster = await golem.run_service(
             PerformanceService,
@@ -374,7 +374,7 @@ async def main(
 
         cluster.stop()
 
-        if len(transfer_list) != 0:
+        if transfer_list:
             transfer_result_json = json.dumps(sorted(transfer_list, key=lambda x: x["provider_id"]))
 
             print(f"{TEXT_COLOR_CYAN}-------------------------------------------------------")
@@ -384,12 +384,12 @@ async def main(
             result = pd.read_json(transfer_result_json, orient="records")
             print(f"{result}{TEXT_COLOR_DEFAULT}")
 
-        if download_json:
-            dt = datetime.now().strftime("%Y-%m-%d_%H.%M.%S")
-            with open(f"transfer_test_result_{dt}.json", "a+") as file:
-                file.write(transfer_result_json)
+            if download_json:
+                dt = datetime.now().strftime("%Y-%m-%d_%H.%M.%S")
+                with open(f"transfer_test_result_{dt}.json", "a+") as file:
+                    file.write(transfer_result_json)
 
-        if len(vpn_ping_list) != 0:
+        if vpn_ping_list:
             vpn_ping_result_json = json.dumps(sorted(vpn_ping_list, key=lambda x: x["client"]))
 
             print(f"{TEXT_COLOR_CYAN}-------------------------------------------------------")
@@ -402,7 +402,7 @@ async def main(
                 with open(f"vpn_ping_test_result_{dt}.json", "a+") as file:
                     file.write(vpn_ping_result_json)
 
-        if len(vpn_transfer_list) != 0:
+        if vpn_transfer_list:
             vpn_transfer_result_json = json.dumps(
                 sorted(vpn_transfer_list, key=lambda x: x["client"])
             )
@@ -417,7 +417,7 @@ async def main(
             with open(f"vpn_transfer_test_result_{dt}.json", "a+") as file:
                 file.write(vpn_transfer_result_json)
 
-            shutil.rmtree(TEMP_PATH)
+        shutil.rmtree(TEMP_PATH)
 
 
 if __name__ == "__main__":
@@ -439,39 +439,35 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--transfer",
-        default=False,
-        type=bool,
-        help=("Option to disable test"),
+        action="store_true",
+        help="Enable GFTP transfer test",
     )
     parser.add_argument(
         "--transfer-file-size",
         default=10,
         type=int,
-        help=("Sets transferred file size (in Mbytes, default: %(default)MB)"),
+        help="Sets transferred file size (in Mbytes, default: %(default)MB)",
     )
     parser.add_argument(
         "--vpn-ping",
-        default=False,
-        type=bool,
-        help=("Option to disable test"),
+        action="store_true",
+        help="Option to disable test",
     )
     parser.add_argument(
         "--ping-count",
         default=10,
         type=int,
-        help=("Specifies the number of ping packets to send"),
+        help="Specifies the number of ping packets to send",
     )
     parser.add_argument(
         "--vpn-transfer",
-        default=False,
-        type=bool,
-        help=("Option to disable test"),
+        action="store_true",
+        help="Enable VPN transfer test",
     )
     parser.add_argument(
         "--json",
-        default=False,
-        type=bool,
-        help=("Download results as json files"),
+        action="store_true",
+        help="Download results as json files",
     )
     now = datetime.now().strftime("%Y-%m-%d_%H.%M.%S")
     parser.set_defaults(log_file=f"ya-perf-{now}.log")
