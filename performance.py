@@ -414,8 +414,8 @@ async def main(
 
             if download_json:
                 dt = datetime.now().strftime("%Y-%m-%d_%H.%M.%S")
-            with open(f"vpn_transfer_test_result_{dt}.json", "a+") as file:
-                file.write(vpn_transfer_result_json)
+                with open(f"vpn_transfer_test_result_{dt}.json", "a+") as file:
+                    file.write(vpn_transfer_result_json)
 
         shutil.rmtree(TEMP_PATH)
 
