@@ -392,7 +392,7 @@ async def main(
 
             if download_json:
                 dt = datetime.now().strftime("%Y-%m-%d_%H.%M.%S")
-                with open(f"transfer_test_result_{dt}.json", "a+") as file:
+                with open(f"transfer_test_result_{transfer_file_size}MB_{dt}.json", "a+") as file:
                     file.write(transfer_result_json)
 
         if vpn_ping_list:
@@ -405,7 +405,7 @@ async def main(
 
             if download_json:
                 dt = datetime.now().strftime("%Y-%m-%d_%H.%M.%S")
-                with open(f"vpn_ping_test_result_{dt}.json", "a+") as file:
+                with open(f"vpn_ping_test_result_{ping_count}_pings_{dt}.json", "a+") as file:
                     file.write(vpn_ping_result_json)
 
         if vpn_transfer_list:
