@@ -324,7 +324,13 @@ async def main(
         providers = json.load(file)
 
     if providers:
-        strategy = ProviderFilter(strategy, lambda provider_id: provider_id in providers)
+        if num_instances > len(providers):
+            raise Exception(
+                f"Trying to test {num_instances} nodes, but only {len(providers)} providers ID provided in providers_list.json file"
+            )
+        # Take only first n provider_id from file
+        first_n_elements = providers[:num_instances]
+        strategy = ProviderFilter(strategy, lambda provider_id: provider_id in first_n_elements)
 
     async with Golem(
         budget=1.0,
