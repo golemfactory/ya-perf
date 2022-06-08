@@ -12,7 +12,7 @@ import pathlib
 import sys
 
 from yapapi.contrib.strategy import ProviderFilter
-from yapapi.script import Script
+from yapapi.script import Script, CaptureContext
 from yapapi.golem import Golem
 from yapapi.payload import vm
 from yapapi.services import Service
@@ -109,10 +109,13 @@ class PerformanceService(Service):
     async def start(self):
         async for script in super().start():
             yield script
-        script = self._ctx.new_script(timeout=timedelta(minutes=1))
-        script.run("/bin/bash", "-c", f"iperf3 -s -D")
 
+        script = self._ctx.new_script(timeout=timedelta(minutes=1))
+        capture_ctx = CaptureContext.build()
+        capture = {"stdout": capture_ctx, "stderr": capture_ctx}
+        script.run("/bin/bash", "-c", f"iperf3 -s -D", **capture)
         yield script
+
         server_ip = self.network_node.ip
         ip_provider_id[server_ip] = self.provider_id
         computation_state_server[server_ip] = State.IDLE
@@ -230,33 +233,23 @@ class PerformanceService(Service):
                         logger.info(
                             f"Starting VPN transfer test 🚌. Client: {self.provider_id}, server: {ip_provider_id[server_ip]}"
                         )
-                        output_file_vpn_transfer = (
-                            f"vpn_transfer_client_{client_ip}_to_server_{server_ip}_logs.json"
-                        )
                         script = self._ctx.new_script(timeout=timedelta(minutes=3))
-                        script.run(
+                        capture_ctx = CaptureContext.build()
+                        capture = {"stdout": capture_ctx, "stderr": capture_ctx}
+                        future_result = script.run(
                             "/bin/bash",
                             "-c",
-                            f'iperf3 -c {server_ip} -f M -w 60000 -J | jq \'{{"server":"{ip_provider_id[server_ip]}"}} + .| {{"client":"{self.provider_id}"}} + .\' > /golem/output/{output_file_vpn_transfer}',
+                            f'iperf3 -c {server_ip} -f M -w 60000 -J | jq \'{{"server":"{ip_provider_id[server_ip]}"}} + .| {{"client":"{self.provider_id}"}} + .\'',
+                            **capture
                         )
                         yield script
 
-                        # TODO: Change for stdout to avoid downloading file
-                        script = self._ctx.new_script(timeout=timedelta(minutes=3))
-                        dt = datetime.now().strftime("%Y-%m-%d_%H.%M.%S")
-                        output_file_vpn_transfer_with_date = (
-                            f"{TEMP_PATH}/{dt}_{output_file_vpn_transfer}"
-                        )
-                        script.download_file(
-                            f"/golem/output/{output_file_vpn_transfer}",
-                            f"{output_file_vpn_transfer_with_date}",
-                        )
-                        yield script
+                        result = (await future_result).stdout
 
-                        with open(f"{output_file_vpn_transfer_with_date}") as file:
-                            f = file.read()
+                        # Show test output
+                        print(f"{TEXT_COLOR_CYAN}{result}{TEXT_COLOR_DEFAULT}")
 
-                        data = json.loads(f)
+                        data = json.loads(result)
                         bandwidth_sender_mb_s = (
                             (data["end"]["sum_sent"]["bits_per_second"]) / (8 * 1024 * 1024)
                         ).__round__(3)
