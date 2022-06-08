@@ -1,4 +1,4 @@
-### ya-perf
+# ya-perf
 
 Performance analyzing tool for NET
 
@@ -44,7 +44,7 @@ TCP window size is set to 60000 bytes.
 | --running-time               | 1200        | Option to set time the instance run before the cluster is stopped (in seconds) |
 
 ### Filtering nodes
-You can either use any Providers in subnet (by default) or specify nodes for test. If order to filter nodes input Provider ID in `providers_list.json` file,
+You can use any Providers in the subnet (by default) or specify nodes to test. If order to filter nodes, enter Provider ID in `providers_list.json` file,
 i.e.
 ```json
 [
@@ -56,7 +56,7 @@ i.e.
   "0xdf4b685011fb4b061e6ecb1f418d44e6cb3504d6"
 ]
 ```
-
+Providers are selected for the test according to the order given in the file.
 
 ### Example
 
