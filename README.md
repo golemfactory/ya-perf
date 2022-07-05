@@ -63,3 +63,9 @@ Providers are selected for the test according to the order given in the file.
 ```bash
 python3 performance.py --num-instances 2 --subnet-tag testnet --transfer --transfer-file-size 25 --vpn-ping --ping-count 5 --vpn-transfer --json
 ```
+
+# GSB perf
+
+Measuring local GSB performance. File is published and downloaded on the same machine.
+
+`poetry run python3 gsb-perf.py --transfer-file-size 100`
