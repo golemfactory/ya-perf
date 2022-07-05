@@ -370,7 +370,7 @@ async def main(
 
         while (
             datetime.now() < start_time + timedelta(seconds=running_time)
-            and len(completion_state) < num_instances - 1
+            and len(completion_state) < num_instances
             or not all([len(c) == num_instances - 1 for c in completion_state.values()])
         ):
             try:
