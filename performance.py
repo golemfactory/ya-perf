@@ -109,7 +109,7 @@ class PerformanceService(Service):
     async def start(self):
         async for script in super().start():
             yield script
-        script = self._ctx.new_script(timeout=timedelta(minutes=1))
+        script = self._ctx.new_script()
         script.run("/bin/bash", "-c", f"iperf3 -s -D")
 
         yield script
@@ -127,13 +127,13 @@ class PerformanceService(Service):
             value = bytes(self.transfer_file_size * 1024 * 1024)
             path = "/golem/output/dummy"
             logger.info(f"Provider: {self.provider_id}. 🚀 Starting transfer test. ")
-            script = self._ctx.new_script(timeout=timedelta(minutes=3))
+            script = self._ctx.new_script()
             script.upload_bytes(value, path)
             script = PerformanceScript(script)
             yield script
             upload = script.calculate_transfer(self.transfer_file_size)
 
-            script = self._ctx.new_script(timeout=timedelta(minutes=3))
+            script = self._ctx.new_script()
             script.download_bytes(path, on_download=dummy)
             script = PerformanceScript(script)
             yield script
@@ -201,7 +201,7 @@ class PerformanceService(Service):
                         logger.info(
                             f"Starting VPN ping test 👀. {self.provider_id} sending {self.ping_count} pings to {ip_provider_id[server_ip]}"
                         )
-                        script = self._ctx.new_script(timeout=timedelta(minutes=3))
+                        script = self._ctx.new_script()
                         future_result = script.run(
                             "/bin/bash",
                             "-c",
@@ -211,21 +211,25 @@ class PerformanceService(Service):
 
                         result = (await future_result).stdout
                         data = json.loads(result)
-                        vpn_ping_list.append(
-                            {
-                                "client": data["client"],
-                                "server": data["server"],
-                                "p2p_connection": "",
-                                "packet_loss_percentage": data["packet_loss_rate"],
-                                "rtt_min_ms": data["rtt_min"],
-                                "rtt_avg_ms": data["rtt_avg"],
-                                "rtt_max_ms": data["rtt_max"],
-                            }
+                        append_vpn_ping_list(
+                            self.provider_id,
+                            ip_provider_id[server_ip],
+                            data["packet_loss_rate"],
+                            data["rtt_min"],
+                            data["rtt_avg"],
+                            data["rtt_max"],
                         )
+
                         logger.info(
                             f"Finished VPN ping test 🎉. Average ping sent from {self.provider_id} to {ip_provider_id[server_ip]} is {data['rtt_avg']} ms"
                         )
 
+                except Exception as error:
+                    logger.info(
+                        f" 💀💀💀 VPN ping test 💀💀💀 error: {error}. Client: {self.provider_id}, server: {ip_provider_id[server_ip]}."
+                    )
+
+                try:
                     if self.vpn_transfer:
                         logger.info(
                             f"Starting VPN transfer test 🚌. Client: {self.provider_id}, server: {ip_provider_id[server_ip]}"
@@ -233,7 +237,7 @@ class PerformanceService(Service):
                         output_file_vpn_transfer = (
                             f"vpn_transfer_client_{client_ip}_to_server_{server_ip}_logs.json"
                         )
-                        script = self._ctx.new_script(timeout=timedelta(minutes=3))
+                        script = self._ctx.new_script()
                         script.run(
                             "/bin/bash",
                             "-c",
@@ -242,7 +246,7 @@ class PerformanceService(Service):
                         yield script
 
                         # TODO: Change for stdout to avoid downloading file
-                        script = self._ctx.new_script(timeout=timedelta(minutes=3))
+                        script = self._ctx.new_script()
                         dt = datetime.now().strftime("%Y-%m-%d_%H.%M.%S")
                         output_file_vpn_transfer_with_date = (
                             f"{TEMP_PATH}/{dt}_{output_file_vpn_transfer}"
@@ -264,24 +268,24 @@ class PerformanceService(Service):
                             (data["end"]["sum_received"]["bits_per_second"]) / (8 * 1024 * 1024)
                         ).__round__(3)
 
-                        vpn_transfer_list.append(
-                            {
-                                "client": data["client"],
-                                "server": data["server"],
-                                "p2p_connection": "",
-                                "bandwidth_sender_mb_s": bandwidth_sender_mb_s,
-                                "bandwidth_receiver_mb_s": bandwidth_receiver_mb_s,
-                            }
+                        append_vpn_transfer_list(
+                            self.provider_id,
+                            ip_provider_id[server_ip],
+                            bandwidth_sender_mb_s,
+                            bandwidth_receiver_mb_s,
                         )
+
                         logger.info(
                             f"Finished VPN transfer test 🎉. Client: {self.provider_id}, server: {ip_provider_id[server_ip]}. Bandwidth: ⬆ sender {bandwidth_sender_mb_s} MByte/s, ⬇ receiver {bandwidth_receiver_mb_s} MByte/s"
                         )
-
-                    completion_state[client_ip].add(server_ip)
-                    logger.info(f"{self.provider_id} ✅ finished on {ip_provider_id[server_ip]}")
-
                 except Exception as error:
-                    logger.info(f" 💀💀💀 error: {error}")
+                    logger.info(
+                        f" 💀💀💀 VPN transfer test 💀💀💀 error: {error}. Client: {self.provider_id}, server: {ip_provider_id[server_ip]}."
+                    )
+                    append_vpn_transfer_list(self.provider_id, ip_provider_id[server_ip])
+
+                completion_state[client_ip].add(server_ip)
+                logger.info(f"{self.provider_id} ✅ finished on {ip_provider_id[server_ip]}")
 
                 await lock.acquire()
                 computation_state_server[server_ip] = State.IDLE
@@ -302,6 +306,36 @@ class PerformanceService(Service):
 
     async def reset(self):
         pass
+
+
+def append_vpn_transfer_list(
+    client, server, bandwidth_sender_mb_s=None, bandwidth_receiver_mb_s=None
+):
+    vpn_transfer_list.append(
+        {
+            "client": client,
+            "server": server,
+            "p2p_connection": "",
+            "bandwidth_sender_mb_s": bandwidth_sender_mb_s,
+            "bandwidth_receiver_mb_s": bandwidth_receiver_mb_s,
+        }
+    )
+
+
+def append_vpn_ping_list(
+    client, server, packet_loss_percentage, rtt_min_ms, rtt_avg_ms, rtt_max_ms
+):
+    vpn_ping_list.append(
+        {
+            "client": client,
+            "server": server,
+            "p2p_connection": "",
+            "packet_loss_percentage": packet_loss_percentage,
+            "rtt_min_ms": rtt_min_ms,
+            "rtt_avg_ms": rtt_avg_ms,
+            "rtt_max_ms": rtt_max_ms,
+        }
+    )
 
 
 async def main(
