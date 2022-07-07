@@ -17,6 +17,8 @@ import matplotlib.pyplot as plt
 # - the SSH daemon must be running on each designated host
 # - runner host on must be pre-authorized on each host
 #   (no password or key acknowledgment prompts are supported)
+#
+# `saturate` MUST be present on PATH
 
 
 DEFAULT_RECEIVER_PORT = 12000

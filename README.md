@@ -84,7 +84,9 @@ inbound speed rates and dumps that data to a CSV file.
 
 1. `saturate` supporting CSV file dumps (https://github.com/golemfactory/ya-relay/pull/181)
 
-2. This tool requires key-authorized SSH access to all hosts specified in the configuration file
+2. `saturate` binary is present on PATH
+
+3. This tool requires key-authorized SSH access to all hosts specified in the configuration file
     - the SSH daemon must be running on each designated host
     - runner host on must be pre-authorized on each host
       (no password or key acknowledgment prompts are supported)
