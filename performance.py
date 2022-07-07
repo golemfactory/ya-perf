@@ -261,12 +261,17 @@ class PerformanceService(Service):
                             f = file.read()
 
                         data = json.loads(f)
-                        bandwidth_sender_mb_s = (
-                            (data["end"]["sum_sent"]["bits_per_second"]) / (8 * 1024 * 1024)
-                        ).__round__(3)
-                        bandwidth_receiver_mb_s = (
-                            (data["end"]["sum_received"]["bits_per_second"]) / (8 * 1024 * 1024)
-                        ).__round__(3)
+
+                        try:
+                            bandwidth_sender_mb_s = (
+                                (data["end"]["sum_sent"]["bits_per_second"]) / (8 * 1024 * 1024)
+                            ).__round__(3)
+                            bandwidth_receiver_mb_s = (
+                                (data["end"]["sum_received"]["bits_per_second"]) / (8 * 1024 * 1024)
+                            ).__round__(3)
+                        except Exception:
+                            error = data["error"]
+                            raise Exception(error)
 
                         append_vpn_transfer_list(
                             self.provider_id,
