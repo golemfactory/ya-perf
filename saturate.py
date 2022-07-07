@@ -149,7 +149,7 @@ def _spawn_sender(test_name, host, env, time, node):
     return subprocess.Popen(ssh_cmd, stdout=subprocess.DEVNULL, shell=True)
 
 
-def plot(name: str, files: list, indexes: dict, dir: str):
+def plot(name: str, files: list, env_keys: list, dir: str):
     headers = ["time", "node", "Bps", "B total"]
     dir = Path(dir)
     path = f"{Path(dir) / name}.png"
@@ -160,7 +160,7 @@ def plot(name: str, files: list, indexes: dict, dir: str):
         node = df.iloc[idx]["node"]
         res_df = df.loc[df["node"] == node]
 
-        plt.plot(res_df["time"], res_df["Bps"], label=label(file, indexes))
+        plt.plot(res_df["time"], res_df["Bps"], label=label(file, env_keys))
 
     plt.legend(loc="best", fontsize="x-small")
     plt.xlabel("test time [s]", fontsize="x-small")
@@ -176,20 +176,17 @@ def plot(name: str, files: list, indexes: dict, dir: str):
     plt.close()
 
 
-def label(file_name: Path, indexes: dict):
+def label(file_name: Path, env_keys: list):
     split = file_name.stem.split("_")
+    offset = 2
+    items = []
 
-    if indexes["rx"] == -1:
-        rx = "?"
-    else:
-        rx = split[indexes["rx"] + 2]
+    for i, key in enumerate(env_keys):
+        if key == "YA_NET_RELAY_HOST":
+            continue
+        items.append(split[i + offset])
 
-    if indexes["tx"] == -1:
-        tx = "?"
-    else:
-        tx = split[indexes["tx"] + 2]
-
-    return f"rx {rx}, tx {tx}"
+    return f" ".join(items)
 
 
 def category(file_name: Path):
@@ -201,26 +198,15 @@ def gen(conf, dir: str):
     files = [Path(dir) / f for f in os.listdir(dir) if f.endswith(".csv")]
     categorized = {}
 
-    env_keys = sorted(conf["env"].keys())
-    indexes = {}
-
-    try:
-        indexes["rx"] = env_keys.index("YA_NET_TCP_MAX_RECV_BUF_SIZE")
-    except:  # noqa
-        indexes["rx"] = -1
-    try:
-        indexes["tx"] = env_keys.index("YA_NET_TCP_MAX_SEND_BUF_SIZE")
-    except:  # noqa
-        indexes["tx"] = -1
-
     for file in files:
         cat = category(file)
         if cat not in categorized:
             categorized[cat] = []
         categorized[cat].append(file)
 
+    env_keys = sorted(conf["env"].keys())
     for cat, files in categorized.items():
-        plot(cat, sorted(files), indexes, dir)
+        plot(cat, sorted(files), env_keys, dir)
 
 
 def _run_args(args):
