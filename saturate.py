@@ -36,13 +36,13 @@ def run(conf: dict, dir: str):
     try:
         _run(conf, dir)
         gen(conf, dir)
-    except Exception as exc:  # noqa
+    except BaseException:  # noqa
         for proc in [proc_send, proc_recv]:
             if not proc:
                 continue
             proc.kill()
             proc.wait()
-        raise exc
+        raise
 
 
 def _run(conf: dict, dir: str):
@@ -71,6 +71,13 @@ def _run(conf: dict, dir: str):
             )
             env = {name: items[i] for i, name in enumerate(env_keys)}
 
+            if os.path.exists(Path(dir) / f"{test_name}_recv.csv"):
+                print(f"Skipping")
+                print(f"  name:\t {test_name}")
+                print(f"  env:\t {env}")
+                print("")
+                continue
+
             print(f"Running ({time}s)")
             print(f"  name:\t {test_name}")
             print(f"  env:\t {env}")
@@ -84,12 +91,12 @@ def _run(conf: dict, dir: str):
             env["YA_NET_BIND_URL"] = f"udp://0.0.0.0:{send_port}"
             proc_send = _spawn_sender(test_name, host_pair[1], env, time, node)
 
-            print("   waiting ...")
+            print(f"   waiting ...")
             exit_codes = [p.wait() for p in (proc_recv, proc_send)]
             if any(c != 0 for c in exit_codes):
                 raise RuntimeError("Failure: exit code != 0")
 
-            print("   downloading results ...")
+            print(f"   downloading results ...")
             proc = subprocess.Popen(
                 f"scp {host_pair[0]}:{csv} {dir}",
                 stdout=subprocess.DEVNULL,
@@ -116,10 +123,13 @@ def _spawn_receiver(test_name: str, host: str, env: dict, time: int):
 
     node_s = "node:"
     node, csv = None, None
+
     proc = subprocess.Popen(ssh_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+    lines = []
 
     for line in proc.stdout:
         line = line.decode("utf-8").replace("\t", "").strip()
+        lines.append(line)
 
         node_idx = line.find(node_s)
         if node_idx != -1:
@@ -129,10 +139,9 @@ def _spawn_receiver(test_name: str, host: str, env: dict, time: int):
             csv = line.replace("csv:", "").strip()
             break
 
-    if not node:
-        raise RuntimeError("Failure: no node id")
-    if not csv:
-        raise RuntimeError("Failure: no CSV file")
+    if not (node and csv):
+        print("\n".join(lines))
+        raise RuntimeError("Failure: invalid receiver output")
 
     return proc, node, csv
 
@@ -146,8 +155,8 @@ def _spawn_sender(test_name, host, env, time, node):
         command="connect",
         post_args=f"{node} -t {time}s",
     )
-    ssh_cmd = f"ssh {host} {cmd}"
 
+    ssh_cmd = f"ssh {host} {cmd}"
     return subprocess.Popen(ssh_cmd, stdout=subprocess.DEVNULL, shell=True)
 
 
@@ -191,17 +200,13 @@ def label(file_name: Path, env_keys: list):
     return f" ".join(items)
 
 
-def category(file_name: Path):
-    split = file_name.stem.split("_")
-    return "_".join(split[0:3])
-
-
 def gen(conf, dir: str):
     files = [Path(dir) / f for f in os.listdir(dir) if f.endswith(".csv")]
     categorized = {}
 
     for file in files:
-        cat = category(file)
+        split = file.stem.split("_")
+        cat = "_".join(split[0:3])
         if cat not in categorized:
             categorized[cat] = []
         categorized[cat].append(file)
@@ -212,16 +217,16 @@ def gen(conf, dir: str):
 
 
 def _run_args(args):
-    conf = _prep_args(args)
+    conf = _init(args)
     run(conf, args.dir)
 
 
 def _gen_args(args):
-    conf = _prep_args(args)
+    conf = _init(args)
     gen(conf, args.dir)
 
 
-def _prep_args(args):
+def _init(args):
     os.makedirs(args.dir, exist_ok=True)
     with open(args.conf, "r") as f:
         return json.load(f)
