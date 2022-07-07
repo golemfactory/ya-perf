@@ -69,3 +69,46 @@ python3 performance.py --num-instances 2 --subnet-tag testnet --transfer --trans
 Measuring local GSB performance. File is published and downloaded on the same machine.
 
 `poetry run python3 gsb-perf.py --transfer-file-size 100`
+
+
+# Saturate
+
+Harness for the [`saturate` tool](https://github.com/golemfactory/ya-relay/blob/main/client/examples/saturate.rs) from
+the `ya-relay` repository.
+
+`saturate` is a `ya-relay` client, executed in either listening or sending mode. The latter discovers the former
+via a designated relay server, establishes a connection, and tries to send as much data as possible. The listener tracks
+inbound speed rates and dumps that data to a CSV file.
+
+## Prerequisites
+
+1. `saturate` supporting CSV file dumps (https://github.com/golemfactory/ya-relay/pull/181)
+
+2. This tool requires key-authorized SSH access to all hosts specified in the configuration file
+    - the SSH daemon must be running on each designated host
+    - runner host on must be pre-authorized on each host
+      (no password or key acknowledgment prompts are supported)
+
+## Usage
+
+Run a test suite, download CSV results and generate plots:
+
+```bash
+poetry run python3 saturate.py config.json ./saturate-output run
+```
+
+Generate plots from CSV data in a `saturate-output` directory:
+
+```bash
+poetry run python3 saturate.py config.json ./saturate-output gen
+```
+
+## Configuration
+
+An example configuration file can be found [here](saturate-template.json).
+
+Available configuration options:
+  - `hosts` - SSH destination hosts (w/ an optional username)
+  - `ports` - (optional) ya-relay client bind ports, specified 1:1 for hosts 
+  - `env` - environment variables to create a product of; a test will be run for each entry
+  - `time` - testing time in seconds
