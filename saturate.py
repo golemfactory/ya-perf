@@ -149,7 +149,7 @@ def _spawn_sender(test_name, host, env, time, node):
     return subprocess.Popen(ssh_cmd, stdout=subprocess.DEVNULL, shell=True)
 
 
-def plot(name: str, files: list, dir: str):
+def plot(name: str, files: list, indexes: dict, dir: str):
     headers = ["time", "node", "Bps", "B total"]
     dir = Path(dir)
     path = f"{Path(dir) / name}.png"
@@ -160,7 +160,7 @@ def plot(name: str, files: list, dir: str):
         node = df.iloc[idx]["node"]
         res_df = df.loc[df["node"] == node]
 
-        plt.plot(res_df["time"], res_df["Bps"], label=label(file))
+        plt.plot(res_df["time"], res_df["Bps"], label=label(file, indexes))
 
     plt.legend(loc="best", fontsize="x-small")
     plt.xlabel("test time [s]", fontsize="x-small")
@@ -176,9 +176,20 @@ def plot(name: str, files: list, dir: str):
     plt.close()
 
 
-def label(file_name: Path):
+def label(file_name: Path, indexes: dict):
     split = file_name.stem.split("_")
-    return f"rx {split[-3]}, tx {split[-2]}"
+
+    if indexes["rx"] == -1:
+        rx = "?"
+    else:
+        rx = split[indexes["rx"] + 2]
+
+    if indexes["tx"] == -1:
+        tx = "?"
+    else:
+        tx = split[indexes["tx"] + 2]
+
+    return f"rx {rx}, tx {tx}"
 
 
 def category(file_name: Path):
@@ -186,9 +197,21 @@ def category(file_name: Path):
     return "_".join(split[0:3])
 
 
-def gen(_conf, dir: str):
+def gen(conf, dir: str):
     files = [Path(dir) / f for f in os.listdir(dir) if f.endswith(".csv")]
     categorized = {}
+
+    env_keys = sorted(conf["env"].keys())
+    indexes = {}
+
+    try:
+        indexes["rx"] = env_keys.index("YA_NET_TCP_MAX_RECV_BUF_SIZE")
+    except:  # noqa
+        indexes["rx"] = -1
+    try:
+        indexes["tx"] = env_keys.index("YA_NET_TCP_MAX_SEND_BUF_SIZE")
+    except:  # noqa
+        indexes["tx"] = -1
 
     for file in files:
         cat = category(file)
@@ -197,7 +220,7 @@ def gen(_conf, dir: str):
         categorized[cat].append(file)
 
     for cat, files in categorized.items():
-        plot(cat, sorted(files), dir)
+        plot(cat, sorted(files), indexes, dir)
 
 
 def _run_args(args):
