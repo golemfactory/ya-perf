@@ -266,8 +266,6 @@ class PerformanceService(Service):
                             bandwidth_receiver_mb_s = parse_scp_result_download(result)
 
                         else:
-                            print("here should be iperf3 test")
-
                             output_file_vpn_transfer = (
                                 f"vpn_transfer_client_{client_ip}_to_server_{server_ip}_logs.json"
                             )
