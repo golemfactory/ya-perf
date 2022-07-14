@@ -253,7 +253,7 @@ class PerformanceService(Service):
                             )
                             yield script
                             result = (await future_result).stderr
-                            bandwidth_sender_mb_s = parse_scp_result_output(result)
+                            bandwidth_sender_mb_s = parse_scp_result_upload(result)
 
                             script = self._ctx.new_script()
                             future_result = script.run(
@@ -263,7 +263,7 @@ class PerformanceService(Service):
                             )
                             yield script
                             result = (await future_result).stderr
-                            bandwidth_receiver_mb_s = parse_scp_result_output(result)
+                            bandwidth_receiver_mb_s = parse_scp_result_download(result)
 
                         else:
                             print("here should be iperf3 test")
@@ -377,13 +377,22 @@ def append_vpn_ping_list(
     )
 
 
-def parse_scp_result_output(result) -> float:
+def parse_scp_result_upload(result) -> float:
     result = result.split("\n")
     result = result[-3]
     result = result.split("sent")
     result = result[-1]
     result = result.split(",")
     result = result[0]
+
+    return (float(result) / (1024 * 1024)).__round__(3)
+
+
+def parse_scp_result_download(result) -> float:
+    result = result.split("\n")
+    result = result[-3]
+    result = result.split("received")
+    result = result[-1]
 
     return (float(result) / (1024 * 1024)).__round__(3)
 
