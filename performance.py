@@ -409,6 +409,7 @@ async def main(
     scp,
     scp_transfer_file_size,
     download_json,
+    output_dir,
     instances=None,
 ):
     strategy = LeastExpensiveLinearPayuMS()
@@ -475,6 +476,11 @@ async def main(
 
         cluster.stop()
 
+        save_path = ''
+        if output_dir:
+            os.mkdir(output_dir)
+            save_path = output_dir
+
         if transfer_list:
             transfer_result_json = json.dumps(sorted(transfer_list, key=lambda x: x["provider_id"]))
 
@@ -487,7 +493,10 @@ async def main(
 
             if download_json:
                 dt = datetime.now().strftime("%Y-%m-%d_%H.%M.%S")
-                with open(f"transfer_test_result_{transfer_file_size}MB_{dt}.json", "a+") as file:
+                file_name = f"transfer_test_result_{transfer_file_size}MB_{dt}.json"
+                complete_name = os.path.join(save_path, file_name)
+
+                with open(complete_name, "a+") as file:
                     file.write(transfer_result_json)
 
         if vpn_ping_list:
@@ -500,7 +509,10 @@ async def main(
 
             if download_json:
                 dt = datetime.now().strftime("%Y-%m-%d_%H.%M.%S")
-                with open(f"vpn_ping_test_result_{ping_count}_pings_{dt}.json", "a+") as file:
+                file_name = f"vpn_ping_test_result_{ping_count}_pings_{dt}.json"
+                complete_name = os.path.join(save_path, file_name)
+
+                with open(complete_name, "a+") as file:
                     file.write(vpn_ping_result_json)
 
         if vpn_transfer_list:
@@ -515,7 +527,10 @@ async def main(
 
             if download_json:
                 dt = datetime.now().strftime("%Y-%m-%d_%H.%M.%S")
-                with open(f"vpn_transfer_test_result_{dt}.json", "a+") as file:
+                file_name = f"vpn_transfer_test_result_{dt}.json"
+                complete_name = os.path.join(save_path, file_name)
+
+                with open(complete_name, "a+") as file:
                     file.write(vpn_transfer_result_json)
 
         shutil.rmtree(TEMP_PATH)
@@ -581,6 +596,12 @@ if __name__ == "__main__":
         action="store_true",
         help="Download results as json files",
     )
+    parser.add_argument(
+        "--output-dir",
+        default='',
+        type=str,
+        help="Sets output directory for results",
+    )
     now = datetime.now().strftime("%Y-%m-%d_%H.%M.%S")
     parser.set_defaults(log_file=f"ya-perf-{now}.log")
     args = parser.parse_args()
@@ -600,6 +621,7 @@ if __name__ == "__main__":
             scp=args.scp,
             scp_transfer_file_size=args.scp_transfer_file_size,
             download_json=args.json,
+            output_dir=args.output_dir,
         ),
         log_file=args.log_file,
     )

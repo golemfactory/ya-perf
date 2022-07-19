@@ -36,15 +36,16 @@ TCP window size is set to 60000 bytes. Default performance testing tool can be s
 
 ### General options
 
-| Command line option          | Default     | Description                                                                    |
-|------------------------------|-------------|--------------------------------------------------------------------------------|
-| --num-instances              | 2           | Number of provider nodes to be tested                                          |
-| --subnet-tag                 | devnet-beta | Set subnet name                                                                |
-| --payment-driver, --driver   | erc20       | Set payment network driver                                                     |
-| --payment-network, --network | rinkeby     | Set payment network name                                                       |
-| --json                       | disabled    | Set the flag and save results in JSON format                                   |
-| --log-file                   | ya-perf     | Log file for YAPAPI                                                            |
-| --running-time               | 1200        | Option to set time the instance run before the cluster is stopped (in seconds) |
+| Command line option          | Default        | Description                                                                    |
+|------------------------------|----------------|--------------------------------------------------------------------------------|
+| --num-instances              | 2              | Number of provider nodes to be tested                                          |
+| --subnet-tag                 | devnet-beta    | Set subnet name                                                                |
+| --payment-driver, --driver   | erc20          | Set payment network driver                                                     |
+| --payment-network, --network | rinkeby        | Set payment network name                                                       |
+| --json                       | disabled       | Set the flag and save results in JSON format                                   |
+| --log-file                   | ya-perf        | Log file for YAPAPI                                                            |
+| --running-time               | 1200           | Option to set time the instance run before the cluster is stopped (in seconds) |
+| --output-dir                 | main directory | Sets output directory for results                                              |
 
 ### Filtering nodes
 You can use any Providers in the subnet (by default) or specify nodes to test. If order to filter nodes, enter Provider ID in `providers_list.json` file,
