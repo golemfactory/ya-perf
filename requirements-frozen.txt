@@ -1,7 +1,6 @@
 aiohttp==3.8.1
 aiohttp-sse-client==0.1.7
 aiosignal==1.2.0
-apturl==0.5.2
 async-exit-stack==1.0.1
 async-timeout==4.0.2
 attrs==21.4.0
