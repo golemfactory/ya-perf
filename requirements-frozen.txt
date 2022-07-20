@@ -6,7 +6,6 @@ chardet==4.0.0
 cryptography==2.1.4
 docutils==0.17.1
 enum34==1.1.6
-Foundations==2.1.0
 idna==2.10
 imagesize==1.4.1
 ipaddress==1.0.17
