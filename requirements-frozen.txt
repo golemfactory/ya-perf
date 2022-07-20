@@ -15,7 +15,6 @@ keyrings.alt==3.0
 linecache2==1.0.0
 MarkupSafe==1.1.1
 numpy==1.16.6
-Oncilla==0.1.0
 packaging==20.9
 pandas==0.24.2
 pycrypto==2.6.1
