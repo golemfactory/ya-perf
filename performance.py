@@ -476,9 +476,10 @@ async def main(
 
         cluster.stop()
 
-        save_path = ''
+        save_path = ""
         if output_dir:
-            os.mkdir(output_dir)
+            if not os.path.exists(output_dir):
+                os.mkdir(output_dir)
             save_path = output_dir
 
         if transfer_list:
@@ -598,7 +599,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output-dir",
-        default='',
+        default="",
         type=str,
         help="Sets output directory for results",
     )
