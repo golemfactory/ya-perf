@@ -117,9 +117,7 @@ class PerformanceService(Service):
         script.run("/bin/bash", "-c", "iperf3 -s -D")
         script.run("/bin/bash", "-c", "/usr/sbin/sshd")
         if self.scp:
-            # TODO: Once VM runtime is fixed change scp_transfer_file_size to be configurable. Now we use 60KB default packet size and
-            # script.run("/bin/bash", "-c", f"truncate -s {self.scp_transfer_file_size}M /golem/dummy.dat")
-            script.run("/bin/bash", "-c", f"truncate -s 60K /golem/dummy.dat")
+            script.run("/bin/bash", "-c", f"truncate -s {self.scp_transfer_file_size}M /golem/dummy.dat")
         yield script
 
         server_ip = self.network_node.ip
