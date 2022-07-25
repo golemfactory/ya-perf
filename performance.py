@@ -90,6 +90,8 @@ class PerformanceService(Service):
         vpn_ping: bool,
         ping_count: int,
         vpn_transfer: bool,
+        scp: bool,
+        scp_transfer_file_size: int,
     ):
         super().__init__()
         self.transfer_file_size = transfer_file_size
@@ -97,11 +99,13 @@ class PerformanceService(Service):
         self.vpn_ping = vpn_ping
         self.ping_count = ping_count
         self.vpn_transfer = vpn_transfer
+        self.scp = scp
+        self.scp_transfer_file_size = scp_transfer_file_size
 
     @staticmethod
     async def get_payload():
         return await vm.repo(
-            image_hash="6aa7ef45d0f4c91e147a01c2f311c63bfeb742ea6743ae8e407cd202",
+            image_hash="3f521a6f14ffb4564c656cfc73fed7bf2dc2b146a25877af9f13c88d",
             min_mem_gib=1.0,
             min_storage_gib=0.5,
         )
@@ -110,9 +114,12 @@ class PerformanceService(Service):
         async for script in super().start():
             yield script
         script = self._ctx.new_script()
-        script.run("/bin/bash", "-c", f"iperf3 -s -D")
-
+        script.run("/bin/bash", "-c", "iperf3 -s -D")
+        script.run("/bin/bash", "-c", "/usr/sbin/sshd")
+        if self.scp:
+            script.run("/bin/bash", "-c", f"truncate -s {self.scp_transfer_file_size}M /golem/dummy.dat")
         yield script
+
         server_ip = self.network_node.ip
         ip_provider_id[server_ip] = self.provider_id
         computation_state_server[server_ip] = State.IDLE
@@ -234,44 +241,67 @@ class PerformanceService(Service):
                         logger.info(
                             f"Starting VPN transfer test 🚌. Client: {self.provider_id}, server: {ip_provider_id[server_ip]}"
                         )
-                        output_file_vpn_transfer = (
-                            f"vpn_transfer_client_{client_ip}_to_server_{server_ip}_logs.json"
-                        )
-                        script = self._ctx.new_script()
-                        script.run(
-                            "/bin/bash",
-                            "-c",
-                            f'iperf3 -c {server_ip} -f M -w 60000 -J | jq \'{{"server":"{ip_provider_id[server_ip]}"}} + .| {{"client":"{self.provider_id}"}} + .\' > /golem/output/{output_file_vpn_transfer}',
-                        )
-                        yield script
 
-                        # TODO: Change for stdout to avoid downloading file
-                        script = self._ctx.new_script()
-                        dt = datetime.now().strftime("%Y-%m-%d_%H.%M.%S")
-                        output_file_vpn_transfer_with_date = (
-                            f"{TEMP_PATH}/{dt}_{output_file_vpn_transfer}"
-                        )
-                        script.download_file(
-                            f"/golem/output/{output_file_vpn_transfer}",
-                            f"{output_file_vpn_transfer_with_date}",
-                        )
-                        yield script
+                        if self.scp:
+                            script = self._ctx.new_script()
+                            future_result = script.run(
+                                "/bin/bash",
+                                "-c",
+                                f"scp -v /golem/dummy.dat root@{server_ip}:/golem/upload",
+                            )
+                            yield script
+                            result = (await future_result).stderr
+                            bandwidth_sender_mb_s = parse_scp_result_upload(result)
 
-                        with open(f"{output_file_vpn_transfer_with_date}") as file:
-                            f = file.read()
+                            script = self._ctx.new_script()
+                            future_result = script.run(
+                                "/bin/bash",
+                                "-c",
+                                f"scp -v root@{server_ip}:/golem/dummy.dat /golem/download",
+                            )
+                            yield script
+                            result = (await future_result).stderr
+                            bandwidth_receiver_mb_s = parse_scp_result_download(result)
 
-                        data = json.loads(f)
+                        else:
+                            output_file_vpn_transfer = (
+                                f"vpn_transfer_client_{client_ip}_to_server_{server_ip}_logs.json"
+                            )
 
-                        try:
-                            bandwidth_sender_mb_s = (
-                                (data["end"]["sum_sent"]["bits_per_second"]) / (8 * 1024 * 1024)
-                            ).__round__(3)
-                            bandwidth_receiver_mb_s = (
-                                (data["end"]["sum_received"]["bits_per_second"]) / (8 * 1024 * 1024)
-                            ).__round__(3)
-                        except Exception:
-                            error = data["error"]
-                            raise Exception(error)
+                            script = self._ctx.new_script()
+                            script.run(
+                                "/bin/bash",
+                                "-c",
+                                f'iperf3 -c {server_ip} -f M -w 60000 -J | jq \'{{"server":"{ip_provider_id[server_ip]}"}} + .| {{"client":"{self.provider_id}"}} + .\' > /golem/output/{output_file_vpn_transfer}',
+                            )
+                            yield script
+                            script = self._ctx.new_script()
+                            dt = datetime.now().strftime("%Y-%m-%d_%H.%M.%S")
+                            output_file_vpn_transfer_with_date = (
+                                f"{TEMP_PATH}/{dt}_{output_file_vpn_transfer}"
+                            )
+                            script.download_file(
+                                f"/golem/output/{output_file_vpn_transfer}",
+                                f"{output_file_vpn_transfer_with_date}",
+                            )
+                            yield script
+
+                            with open(f"{output_file_vpn_transfer_with_date}") as file:
+                                f = file.read()
+
+                            data = json.loads(f)
+
+                            try:
+                                bandwidth_sender_mb_s = (
+                                    (data["end"]["sum_sent"]["bits_per_second"]) / (8 * 1024 * 1024)
+                                ).__round__(3)
+                                bandwidth_receiver_mb_s = (
+                                    (data["end"]["sum_received"]["bits_per_second"])
+                                    / (8 * 1024 * 1024)
+                                ).__round__(3)
+                            except Exception:
+                                error = data["error"]
+                                raise Exception(error)
 
                         append_vpn_transfer_list(
                             self.provider_id,
@@ -343,6 +373,26 @@ def append_vpn_ping_list(
     )
 
 
+def parse_scp_result_upload(result) -> float:
+    result = result.split("\n")
+    result = result[-3]
+    result = result.split("sent")
+    result = result[-1]
+    result = result.split(",")
+    result = result[0]
+
+    return (float(result) / (1024 * 1024)).__round__(3)
+
+
+def parse_scp_result_download(result) -> float:
+    result = result.split("\n")
+    result = result[-3]
+    result = result.split("received")
+    result = result[-1]
+
+    return (float(result) / (1024 * 1024)).__round__(3)
+
+
 async def main(
     subnet_tag,
     payment_driver,
@@ -354,7 +404,10 @@ async def main(
     vpn_ping,
     ping_count,
     vpn_transfer,
+    scp,
+    scp_transfer_file_size,
     download_json,
+    output_dir,
     instances=None,
 ):
     strategy = LeastExpensiveLinearPayuMS()
@@ -394,6 +447,8 @@ async def main(
                     "vpn_ping": vpn_ping,
                     "ping_count": ping_count,
                     "vpn_transfer": vpn_transfer,
+                    "scp": scp,
+                    "scp_transfer_file_size": scp_transfer_file_size,
                 }
                 for i in range(num_instances)
             ],
@@ -419,6 +474,12 @@ async def main(
 
         cluster.stop()
 
+        save_path = ""
+        if output_dir:
+            if not os.path.exists(output_dir):
+                os.mkdir(output_dir)
+            save_path = output_dir
+
         if transfer_list:
             transfer_result_json = json.dumps(sorted(transfer_list, key=lambda x: x["provider_id"]))
 
@@ -431,7 +492,10 @@ async def main(
 
             if download_json:
                 dt = datetime.now().strftime("%Y-%m-%d_%H.%M.%S")
-                with open(f"transfer_test_result_{transfer_file_size}MB_{dt}.json", "a+") as file:
+                file_name = f"transfer_test_result_{transfer_file_size}MB_{dt}.json"
+                complete_name = os.path.join(save_path, file_name)
+
+                with open(complete_name, "a+") as file:
                     file.write(transfer_result_json)
 
         if vpn_ping_list:
@@ -444,7 +508,10 @@ async def main(
 
             if download_json:
                 dt = datetime.now().strftime("%Y-%m-%d_%H.%M.%S")
-                with open(f"vpn_ping_test_result_{ping_count}_pings_{dt}.json", "a+") as file:
+                file_name = f"vpn_ping_test_result_{ping_count}_pings_{dt}.json"
+                complete_name = os.path.join(save_path, file_name)
+
+                with open(complete_name, "a+") as file:
                     file.write(vpn_ping_result_json)
 
         if vpn_transfer_list:
@@ -459,7 +526,10 @@ async def main(
 
             if download_json:
                 dt = datetime.now().strftime("%Y-%m-%d_%H.%M.%S")
-                with open(f"vpn_transfer_test_result_{dt}.json", "a+") as file:
+                file_name = f"vpn_transfer_test_result_{dt}.json"
+                complete_name = os.path.join(save_path, file_name)
+
+                with open(complete_name, "a+") as file:
                     file.write(vpn_transfer_result_json)
 
         shutil.rmtree(TEMP_PATH)
@@ -510,9 +580,26 @@ if __name__ == "__main__":
         help="Enable VPN transfer test",
     )
     parser.add_argument(
+        "--scp",
+        action="store_true",
+        help="Option to disable test",
+    )
+    parser.add_argument(
+        "--scp-transfer-file-size",
+        default=10,
+        type=int,
+        help="Sets scp transferred file size (in Mbytes, default: %(default)MB)",
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Download results as json files",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default="",
+        type=str,
+        help="Sets output directory for results",
     )
     now = datetime.now().strftime("%Y-%m-%d_%H.%M.%S")
     parser.set_defaults(log_file=f"ya-perf-{now}.log")
@@ -530,7 +617,10 @@ if __name__ == "__main__":
             vpn_ping=args.vpn_ping,
             ping_count=args.ping_count,
             vpn_transfer=args.vpn_transfer,
+            scp=args.scp,
+            scp_transfer_file_size=args.scp_transfer_file_size,
             download_json=args.json,
+            output_dir=args.output_dir,
         ),
         log_file=args.log_file,
     )

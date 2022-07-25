@@ -24,24 +24,28 @@ Test is only completed when each Provider call others (total number of ping test
 
 * **VPN transfer test** between Providers. Only one transfer test at a time between Providers. Each Provider is engaged in only one call at a time, as a client or a server.
 Test is only completed when each Provider call others (total number of transfer test: _n(n-1)_ where _n_ is number of instances). In example the VPN transfer test is completed when 
-3 nodes (A,B,C) complete 6 tests (A->B, B->A, A->C, C->A, B->C, C->B). In the background script uses `iperf 3.11` as a performance testing tool. Bandwidth is measured on TCP protocol.
-TCP window size is set to 60000 bytes.
+3 nodes (A,B,C) complete 6 tests (A->B, B->A, A->C, C->A, B->C, C->B). In the background script uses by default `iperf 3.10.1` as a performance testing tool. Bandwidth is measured on TCP protocol.
+TCP window size is set to 60000 bytes. Default performance testing tool can be switched to `scp` utility with --scp flag. Remember that TCP, Encryption, and SSH control messages add overhead, so your true throughput will be a little higher than the number reported by `scp` for the file transfer.
+`scp` randomly transfers 10MB file. The file size can be set up using --scp-transfer-file-size option.
 
-| Command line option | Default  | Description                  |
-|---------------------|----------|------------------------------|
-| --vpn-transfer      | disabled | Optional flag to enable test |
+| Command line option      | Default  | Description                            |
+|--------------------------|----------|----------------------------------------|
+| --vpn-transfer           | disabled | Optional flag to enable test           |
+| --scp                    | disabled | Optional flag to enable test           |
+| --scp-transfer-file-size | 10       | Sets transferred file size (in Mbytes) |
 
 ### General options
 
-| Command line option          | Default     | Description                                                                    |
-|------------------------------|-------------|--------------------------------------------------------------------------------|
-| --num-instances              | 2           | Number of provider nodes to be tested                                          |
-| --subnet-tag                 | devnet-beta | Set subnet name                                                                |
-| --payment-driver, --driver   | erc20       | Set payment network driver                                                     |
-| --payment-network, --network | rinkeby     | Set payment network name                                                       |
-| --json                       | disabled    | Set the flag and save results in JSON format                                   |
-| --log-file                   | ya-perf     | Log file for YAPAPI                                                            |
-| --running-time               | 1200        | Option to set time the instance run before the cluster is stopped (in seconds) |
+| Command line option          | Default        | Description                                                                    |
+|------------------------------|----------------|--------------------------------------------------------------------------------|
+| --num-instances              | 2              | Number of provider nodes to be tested                                          |
+| --subnet-tag                 | devnet-beta    | Set subnet name                                                                |
+| --payment-driver, --driver   | erc20          | Set payment network driver                                                     |
+| --payment-network, --network | rinkeby        | Set payment network name                                                       |
+| --json                       | disabled       | Set the flag and save results in JSON format                                   |
+| --log-file                   | ya-perf        | Log file for YAPAPI                                                            |
+| --running-time               | 1200           | Option to set time the instance run before the cluster is stopped (in seconds) |
+| --output-dir                 | main directory | Sets output directory for results                                              |
 
 ### Filtering nodes
 You can use any Providers in the subnet (by default) or specify nodes to test. If order to filter nodes, enter Provider ID in `providers_list.json` file,
