@@ -92,6 +92,8 @@ class PerformanceService(Service):
         vpn_transfer: bool,
         scp: bool,
         scp_transfer_file_size: int,
+        cmd_output_count: int,
+        cmd_output_size: int,
     ):
         super().__init__()
         self.transfer_file_size = transfer_file_size
@@ -101,6 +103,8 @@ class PerformanceService(Service):
         self.vpn_transfer = vpn_transfer
         self.scp = scp
         self.scp_transfer_file_size = scp_transfer_file_size
+        self.cmd_output_count = cmd_output_count
+        self.cmd_output_size = cmd_output_size
 
     @staticmethod
     async def get_payload():
@@ -117,7 +121,9 @@ class PerformanceService(Service):
         script.run("/bin/bash", "-c", "iperf3 -s -D")
         script.run("/bin/bash", "-c", "/usr/sbin/sshd")
         if self.scp:
-            script.run("/bin/bash", "-c", f"truncate -s {self.scp_transfer_file_size}M /golem/dummy.dat")
+            script.run(
+                "/bin/bash", "-c", f"truncate -s {self.scp_transfer_file_size}M /golem/dummy.dat"
+            )
         yield script
 
         server_ip = self.network_node.ip
@@ -319,6 +325,31 @@ class PerformanceService(Service):
                     )
                     append_vpn_transfer_list(self.provider_id, ip_provider_id[server_ip])
 
+                try:
+                    if self.cmd_output_count and not (
+                        server_ip in completion_state[client_ip]
+                        or client_ip in completion_state[server_ip]
+                    ):
+                        logger.info(f"Starting command output test 🚌. Client: {self.provider_id}")
+
+                        for _ in range(self.cmd_output_count):
+                            script = self._ctx.new_script()
+                            future_result = script.run(
+                                "/bin/bash",
+                                "-c",
+                                f"tr -dc A-Za-z0-9 < /dev/urandom | head -c {self.cmd_output_size}",
+                            )
+
+                            yield script
+                            await future_result
+
+                        logger.info(f"Finished command output test 🎉. Client: {self.provider_id}.")
+
+                except Exception as error:
+                    logger.info(
+                        f" 💀💀💀 Command output test 💀💀💀 error: {error}. Client: {self.provider_id}."
+                    )
+
                 completion_state[client_ip].add(server_ip)
                 logger.info(f"{self.provider_id} ✅ finished on {ip_provider_id[server_ip]}")
 
@@ -406,6 +437,8 @@ async def main(
     vpn_transfer,
     scp,
     scp_transfer_file_size,
+    cmd_output_count,
+    cmd_output_size,
     download_json,
     output_dir,
     instances=None,
@@ -449,6 +482,8 @@ async def main(
                     "vpn_transfer": vpn_transfer,
                     "scp": scp,
                     "scp_transfer_file_size": scp_transfer_file_size,
+                    "cmd_output_count": cmd_output_count,
+                    "cmd_output_size": cmd_output_size,
                 }
                 for i in range(num_instances)
             ],
@@ -591,6 +626,18 @@ if __name__ == "__main__":
         help="Sets scp transferred file size (in Mbytes, default: %(default)MB)",
     )
     parser.add_argument(
+        "--cmd-output-count",
+        default=0,
+        type=int,
+        help="Specifies the number of commands with output",
+    )
+    parser.add_argument(
+        "--cmd-output-size",
+        default=393216,
+        type=int,
+        help="Sets command output size",
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Download results as json files",
@@ -619,6 +666,8 @@ if __name__ == "__main__":
             vpn_transfer=args.vpn_transfer,
             scp=args.scp,
             scp_transfer_file_size=args.scp_transfer_file_size,
+            cmd_output_count=args.cmd_output_count,
+            cmd_output_size=args.cmd_output_size,
             download_json=args.json,
             output_dir=args.output_dir,
         ),
