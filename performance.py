@@ -52,6 +52,7 @@ network_addresses = []
 transfer_list = []
 vpn_ping_list = []
 vpn_transfer_list = []
+cmd_output_list = []
 
 
 class State(Enum):
@@ -325,31 +326,6 @@ class PerformanceService(Service):
                     )
                     append_vpn_transfer_list(self.provider_id, ip_provider_id[server_ip])
 
-                try:
-                    if self.cmd_output_count and not (
-                        server_ip in completion_state[client_ip]
-                        or client_ip in completion_state[server_ip]
-                    ):
-                        logger.info(f"Starting command output test 🚌. Client: {self.provider_id}")
-
-                        for _ in range(self.cmd_output_count):
-                            script = self._ctx.new_script()
-                            future_result = script.run(
-                                "/bin/bash",
-                                "-c",
-                                f"tr -dc A-Za-z0-9 < /dev/urandom | head -c {self.cmd_output_size}",
-                            )
-
-                            yield script
-                            await future_result
-
-                        logger.info(f"Finished command output test 🎉. Client: {self.provider_id}.")
-
-                except Exception as error:
-                    logger.info(
-                        f" 💀💀💀 Command output test 💀💀💀 error: {error}. Client: {self.provider_id}."
-                    )
-
                 completion_state[client_ip].add(server_ip)
                 logger.info(f"{self.provider_id} ✅ finished on {ip_provider_id[server_ip]}")
 
@@ -359,6 +335,30 @@ class PerformanceService(Service):
                 lock.release()
 
             await asyncio.sleep(1)
+
+        try:
+            if self.cmd_output_count:
+                logger.info(
+                    f"Starting command output test {self.cmd_output_size} B x {self.cmd_output_count} 🚌. Provider: {self.provider_id}"
+                )
+
+                for _ in range(self.cmd_output_count):
+                    script = self._ctx.new_script()
+                    future_result = script.run(
+                        "/bin/bash",
+                        "-c",
+                        f"tr -dc A-Za-z0-9 < /dev/urandom | head -c {self.cmd_output_size}",
+                    )
+
+                    yield script
+                    await future_result
+
+                logger.info(f"Finished command output test 🎉. Provider: {self.provider_id}.")
+                append_cmd_output_list(self.provider_id, True)
+
+        except Exception as error:
+            logger.info(f" 💀💀💀 Command output test 💀💀💀 error: {error}. Provider: {self.provider_id}.")
+            append_cmd_output_list(self.provider_id, False)
 
         logger.info(f"{self.provider_id}: 🎉 finished computing")
 
@@ -402,6 +402,10 @@ def append_vpn_ping_list(
             "rtt_max_ms": rtt_max_ms,
         }
     )
+
+
+def append_cmd_output_list(client, success):
+    cmd_output_list.append({"client": client, "success": success})
 
 
 def parse_scp_result_upload(result) -> float:
@@ -566,6 +570,22 @@ async def main(
 
                 with open(complete_name, "a+") as file:
                     file.write(vpn_transfer_result_json)
+
+        if cmd_output_list:
+            cmd_output_result_json = json.dumps(sorted(cmd_output_list, key=lambda x: x["client"]))
+
+            print(f"{TEXT_COLOR_CYAN}-------------------------------------------------------")
+            print("Command output test")
+            result = pd.read_json(cmd_output_result_json, orient="records")
+            print(f"{result}{TEXT_COLOR_DEFAULT}")
+
+            if download_json:
+                dt = datetime.now().strftime("%Y-%m-%d_%H.%M.%S")
+                file_name = f"cmd_output_test_result_{dt}.json"
+                complete_name = os.path.join(save_path, file_name)
+
+                with open(complete_name, "a+") as file:
+                    file.write(cmd_output_result_json)
 
         shutil.rmtree(TEMP_PATH)
 
