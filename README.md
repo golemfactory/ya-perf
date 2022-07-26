@@ -13,6 +13,13 @@ Performance analyzing tool for NET
 
 WARNING: Be aware that large size of transferred files increase total test time.
 
+* **Command output test** between Requestor and each Provider.
+
+| Command line option | Default   | Description                               |
+|---------------------|-----------|-------------------------------------------|
+| --cmd-output-count  | 0         | Specifies the number of commands to send. |
+| --cmd-output-size   | 393216    | Sets command output size (in bytes).      |
+
 * **VPN ping test** between Providers. Only one ping test at a time between Providers. Each Provider is engaged in only one call at a time, as a client or a server.
 Test is only completed when each Provider call others (total number of ping test: _n(n-1)_ where _n_ is number of instances). In example the VPN ping test is completed when 
 3 nodes (A,B,C) complete 6 tests (A->B, B->A, A->C, C->A, B->C, C->B).
