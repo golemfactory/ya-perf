@@ -40,7 +40,7 @@ function warn() {
 }
 
 function error() {
-    log "${LIGHT_RED}$*${NC}\n"
+    log "${LIGHT_RED}$*${NC}\n" 1>&2
 }
 
 function parse_yaml() {
@@ -76,7 +76,7 @@ function parse_json_kv() {
             local name
 
             id="${REPLY[0]//\"/}"
-            name=$(echo "${REPLY[1]//\"/}" | xargs)
+            name=$(echo "${REPLY[1]//\"/}" | xargs | cut -d'.' -f1)
             result["${id}"]="${name}"
         done <<< "${i}"
     done
@@ -170,15 +170,15 @@ function run() {
     to=$(resolve "${prefix_to}" || echo "")
 
     if [[ -z "${from}" ]]; then
-        error "'from' host ${p_from} not found"
+        error "host ${p_from} (from) not found"
         exit 1
     fi
     if [[ -z "${to}" ]]; then
-        error "'to' host ${p_to} not found"
+        error "host ${p_to} (to) not found"
         exit 1
     fi
     if [[ "${from}" == "${to}" ]]; then
-        error "'from' and 'to' is the same host"
+        error "'from' and 'to' are the same host"
         exit 1
     fi
 
@@ -255,9 +255,9 @@ function main() {
                 continue
             fi
 
-            log "${YELLOW}running${NC} ${LIGHT_BLUE}${from}${NC} -> ${LIGHT_BLUE}${to}${NC} .. "
+            log "${YELLOW}running${NC} ${LIGHT_BLUE}${from}${NC} -> ${LIGHT_BLUE}${to}${NC} .. ${NL}"
             speed=$(run "${from}" "${to}")
-            echo "${speed} B/s"
+            echo "    ${speed} B/s"
 
             results+=("${from}:${to}:${speed}")
         done
