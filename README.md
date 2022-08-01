@@ -52,7 +52,7 @@ TCP window size is set to 60000 bytes. Default performance testing tool can be s
 | --json                       | disabled       | Set the flag and save results in JSON format                                   |
 | --log-file                   | ya-perf        | Log file for YAPAPI                                                            |
 | --running-time               | 1200           | Option to set time the instance run before the cluster is stopped (in seconds) |
-| --output-dir                 | main directory | Sets output directory for results                                              |
+| --output-dir                 | main directory | Sets output directory for results and mapping file                             |
 
 ### Filtering nodes
 You can use any Providers in the subnet (by default) or specify nodes to test. If order to filter nodes, enter Provider ID in `providers_list.json` file,

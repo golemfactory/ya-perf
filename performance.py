@@ -47,12 +47,13 @@ lock = asyncio.Lock()
 computation_state_server = {}
 computation_state_client = {}
 completion_state = {}
-ip_provider_id = {}
+ip_provider_name = {}
 network_addresses = []
 transfer_list = []
 vpn_ping_list = []
 vpn_transfer_list = []
 cmd_output_list = []
+mapping = {}
 
 
 class State(Enum):
@@ -116,19 +117,27 @@ class PerformanceService(Service):
         )
 
     async def start(self):
-        async for script in super().start():
+
+        try:
+            async for script in super().start():
+                yield script
+            script = self._ctx.new_script()
+            script.run("/bin/bash", "-c", "iperf3 -s -D")
+            script.run("/bin/bash", "-c", "/usr/sbin/sshd")
+            if self.scp:
+                script.run(
+                    "/bin/bash",
+                    "-c",
+                    f"truncate -s {self.scp_transfer_file_size}M /golem/dummy.dat",
+                )
             yield script
-        script = self._ctx.new_script()
-        script.run("/bin/bash", "-c", "iperf3 -s -D")
-        script.run("/bin/bash", "-c", "/usr/sbin/sshd")
-        if self.scp:
-            script.run(
-                "/bin/bash", "-c", f"truncate -s {self.scp_transfer_file_size}M /golem/dummy.dat"
+        except Exception as error:
+            logger.info(
+                f" 💀💀💀 Starting instance 💀💀💀 error: {error}. Provider: {self.provider_name}."
             )
-        yield script
 
         server_ip = self.network_node.ip
-        ip_provider_id[server_ip] = self.provider_id
+        ip_provider_name[server_ip] = self.provider_name
         computation_state_server[server_ip] = State.IDLE
         computation_state_client[server_ip] = State.IDLE
 
@@ -137,36 +146,53 @@ class PerformanceService(Service):
             async def dummy(v):
                 pass
 
-            await lock.acquire()
-            value = bytes(self.transfer_file_size * 1024 * 1024)
-            path = "/golem/output/dummy"
-            logger.info(f"Provider: {self.provider_id}. 🚀 Starting transfer test. ")
-            script = self._ctx.new_script()
-            script.upload_bytes(value, path)
-            script = PerformanceScript(script)
-            yield script
-            upload = script.calculate_transfer(self.transfer_file_size)
+            async with lock:
+                try:
+                    value = bytes(self.transfer_file_size * 1024 * 1024)
+                    path = "/golem/output/dummy"
+                    logger.info(f"Provider: {self.provider_name}. 🚀 Starting transfer test. ")
+                    script = self._ctx.new_script()
+                    script.upload_bytes(value, path)
+                    script = PerformanceScript(script)
+                    yield script
+                    upload = script.calculate_transfer(self.transfer_file_size)
 
-            script = self._ctx.new_script()
-            script.download_bytes(path, on_download=dummy)
-            script = PerformanceScript(script)
-            yield script
+                    script = self._ctx.new_script()
+                    script.download_bytes(path, on_download=dummy)
+                    script = PerformanceScript(script)
+                    yield script
 
-            download = script.calculate_transfer(self.transfer_file_size)
-            logger.info(
-                f"Provider: {self.provider_id}. 🎉 Finished transfer test: ⬆ upload {upload} MByte/s, ⬇ download {download} MByte/s"
-            )
-            transfer_list.append(
+                    download = script.calculate_transfer(self.transfer_file_size)
+                    logger.info(
+                        f"Provider: {self.provider_name}. 🎉 Finished transfer test: ⬆ upload {upload} MByte/s, ⬇ download {download} MByte/s"
+                    )
+                    transfer_list.append(
+                        {
+                            "provider_name": self.provider_name,
+                            "upload_mb_s": upload,
+                            "download_mb_s": download,
+                        }
+                    )
+
+                    network_addresses.append(server_ip)
+                    mapping.update(
+                        {
+                            self.provider_id: self.provider_name,
+                        }
+                    )
+
+                except Exception as error:
+                    logger.info(
+                        f" 💀💀💀 Transfer test 💀💀💀 error: {error}. Provider: {self.provider_name}."
+                    )
+
+        else:
+            network_addresses.append(server_ip)
+            mapping.update(
                 {
-                    "provider_id": self.provider_id,
-                    "upload_mb_s": upload,
-                    "download_mb_s": download,
+                    self.provider_id: self.provider_name,
                 }
             )
-
-            lock.release()
-
-        network_addresses.append(server_ip)
 
     async def run(self):
         global computation_state_client
@@ -180,7 +206,7 @@ class PerformanceService(Service):
         neighbour_count = len(network_addresses) - 1
         completion_state[client_ip] = set()
 
-        logger.info(f"{self.provider_id}: 🏃 running")
+        logger.info(f"{self.provider_name}: 🏃 running")
         await asyncio.sleep(5)
 
         while len(completion_state[client_ip]) < neighbour_count:
@@ -192,154 +218,183 @@ class PerformanceService(Service):
                     continue
                 elif server_ip not in computation_state_server:
                     continue
-                await lock.acquire()
-                if (
-                    computation_state_server[server_ip] != State.IDLE
-                    or computation_state_client[server_ip] != State.IDLE
-                    or computation_state_server[client_ip] != State.IDLE
-                ):
-                    lock.release()
-                    await asyncio.sleep(1)
-                    continue
 
-                computation_state_server[server_ip] = State.COMPUTING
-                computation_state_client[client_ip] = State.COMPUTING
-                lock.release()
+                async with lock:
+                    if (
+                        computation_state_server[server_ip] != State.IDLE
+                        or computation_state_client[server_ip] != State.IDLE
+                        or computation_state_server[client_ip] != State.IDLE
+                    ):
+                        await asyncio.sleep(1)
+                        continue
+
+                    computation_state_server[server_ip] = State.COMPUTING
+                    computation_state_client[client_ip] = State.COMPUTING
 
                 await asyncio.sleep(1)
 
-                logger.info(f"{self.provider_id} 🔄 computing on {ip_provider_id[server_ip]}")
+                logger.info(f"{self.provider_name} 🔄 computing on {ip_provider_name[server_ip]}")
 
                 try:
-                    if self.vpn_ping:
-                        logger.info(
-                            f"Starting VPN ping test 👀. {self.provider_id} sending {self.ping_count} pings to {ip_provider_id[server_ip]}"
-                        )
-                        script = self._ctx.new_script()
-                        future_result = script.run(
-                            "/bin/bash",
-                            "-c",
-                            f'ping -c {self.ping_count} {server_ip} | pingparsing - | jq \'del(.destination) | {{"server":"{ip_provider_id[server_ip]}"}} + .| {{"client":"{self.provider_id}"}} + .\'',
-                        )
-                        yield script
+                    async for i in self.test_vpn_ping(server_ip):
+                        yield i
 
-                        result = (await future_result).stdout
-                        data = json.loads(result)
-                        append_vpn_ping_list(
-                            self.provider_id,
-                            ip_provider_id[server_ip],
-                            data["packet_loss_rate"],
-                            data["rtt_min"],
-                            data["rtt_avg"],
-                            data["rtt_max"],
-                        )
-
-                        logger.info(
-                            f"Finished VPN ping test 🎉. Average ping sent from {self.provider_id} to {ip_provider_id[server_ip]} is {data['rtt_avg']} ms"
-                        )
+                    async for i in self.test_vpn_transfer(server_ip, client_ip):
+                        yield i
 
                 except Exception as error:
-                    logger.info(
-                        f" 💀💀💀 VPN ping test 💀💀💀 error: {error}. Client: {self.provider_id}, server: {ip_provider_id[server_ip]}."
-                    )
+                    logger.info(f"Error: {error}")
 
-                try:
-                    if self.vpn_transfer:
-                        logger.info(
-                            f"Starting VPN transfer test 🚌. Client: {self.provider_id}, server: {ip_provider_id[server_ip]}"
-                        )
+                finally:
+                    completion_state[client_ip].add(server_ip)
+                    logger.info(f"{self.provider_name} ✅ finished on {ip_provider_name[server_ip]}")
 
-                        if self.scp:
-                            script = self._ctx.new_script()
-                            future_result = script.run(
-                                "/bin/bash",
-                                "-c",
-                                f"scp -v /golem/dummy.dat root@{server_ip}:/golem/upload",
-                            )
-                            yield script
-                            result = (await future_result).stderr
-                            bandwidth_sender_mb_s = parse_scp_result_upload(result)
-
-                            script = self._ctx.new_script()
-                            future_result = script.run(
-                                "/bin/bash",
-                                "-c",
-                                f"scp -v root@{server_ip}:/golem/dummy.dat /golem/download",
-                            )
-                            yield script
-                            result = (await future_result).stderr
-                            bandwidth_receiver_mb_s = parse_scp_result_download(result)
-
-                        else:
-                            output_file_vpn_transfer = (
-                                f"vpn_transfer_client_{client_ip}_to_server_{server_ip}_logs.json"
-                            )
-
-                            script = self._ctx.new_script()
-                            script.run(
-                                "/bin/bash",
-                                "-c",
-                                f'iperf3 -c {server_ip} -f M -w 60000 -J | jq \'{{"server":"{ip_provider_id[server_ip]}"}} + .| {{"client":"{self.provider_id}"}} + .\' > /golem/output/{output_file_vpn_transfer}',
-                            )
-                            yield script
-                            script = self._ctx.new_script()
-                            dt = datetime.now().strftime("%Y-%m-%d_%H.%M.%S")
-                            output_file_vpn_transfer_with_date = (
-                                f"{TEMP_PATH}/{dt}_{output_file_vpn_transfer}"
-                            )
-                            script.download_file(
-                                f"/golem/output/{output_file_vpn_transfer}",
-                                f"{output_file_vpn_transfer_with_date}",
-                            )
-                            yield script
-
-                            with open(f"{output_file_vpn_transfer_with_date}") as file:
-                                f = file.read()
-
-                            data = json.loads(f)
-
-                            try:
-                                bandwidth_sender_mb_s = (
-                                    (data["end"]["sum_sent"]["bits_per_second"]) / (8 * 1024 * 1024)
-                                ).__round__(3)
-                                bandwidth_receiver_mb_s = (
-                                    (data["end"]["sum_received"]["bits_per_second"])
-                                    / (8 * 1024 * 1024)
-                                ).__round__(3)
-                            except Exception:
-                                error = data["error"]
-                                raise Exception(error)
-
-                        append_vpn_transfer_list(
-                            self.provider_id,
-                            ip_provider_id[server_ip],
-                            bandwidth_sender_mb_s,
-                            bandwidth_receiver_mb_s,
-                        )
-
-                        logger.info(
-                            f"Finished VPN transfer test 🎉. Client: {self.provider_id}, server: {ip_provider_id[server_ip]}. Bandwidth: ⬆ sender {bandwidth_sender_mb_s} MByte/s, ⬇ receiver {bandwidth_receiver_mb_s} MByte/s"
-                        )
-                except Exception as error:
-                    logger.info(
-                        f" 💀💀💀 VPN transfer test 💀💀💀 error: {error}. Client: {self.provider_id}, server: {ip_provider_id[server_ip]}."
-                    )
-                    append_vpn_transfer_list(self.provider_id, ip_provider_id[server_ip])
-
-                completion_state[client_ip].add(server_ip)
-                logger.info(f"{self.provider_id} ✅ finished on {ip_provider_id[server_ip]}")
-
-                await lock.acquire()
-                computation_state_server[server_ip] = State.IDLE
-                computation_state_client[client_ip] = State.IDLE
-                lock.release()
+                    async with lock:
+                        computation_state_server[server_ip] = State.IDLE
+                        computation_state_client[client_ip] = State.IDLE
 
             await asyncio.sleep(1)
 
         try:
+            async for i in self.test_cmd_output_count():
+                yield i
+        except Exception as error:
+            logger.info(f"Error: {error}")
+
+        # keep running - nodes may want to compute on this node
+        while len(completion_state) < neighbour_count or not all(
+            [len(c) == neighbour_count for c in completion_state.values()]
+        ):
+            await asyncio.sleep(1)
+
+        logger.info(f"{self.provider_name}: 🎉 finished computing")
+        logger.info(f"{self.provider_name}: 🚪 exiting")
+
+    async def reset(self):
+        pass
+
+    async def test_vpn_ping(self, server_ip):
+        try:
+            if self.vpn_ping:
+                logger.info(
+                    f"Starting VPN ping test 👀. {self.provider_name} sending {self.ping_count} pings to {ip_provider_name[server_ip]}"
+                )
+                script = self._ctx.new_script()
+                future_result = script.run(
+                    "/bin/bash",
+                    "-c",
+                    f'ping -c {self.ping_count} {server_ip} | pingparsing - | jq \'del(.destination) | {{"server":"{ip_provider_name[server_ip]}"}} + .| {{"client":"{self.provider_name}"}} + .\'',
+                )
+                yield script
+
+                result = (await future_result).stdout
+                data = json.loads(result)
+                append_vpn_ping_list(
+                    self.provider_name,
+                    ip_provider_name[server_ip],
+                    data["packet_loss_rate"],
+                    data["rtt_min"],
+                    data["rtt_avg"],
+                    data["rtt_max"],
+                )
+
+                logger.info(
+                    f"Finished VPN ping test 🎉. Average ping sent from {self.provider_name} to {ip_provider_name[server_ip]} is {data['rtt_avg']} ms"
+                )
+
+        except Exception as error:
+            raise Exception(f"💀💀💀 VPN ping test 💀💀💀 error: {error}. Client: {self.provider_name}, server: {ip_provider_name[server_ip]}")
+
+    async def test_vpn_transfer(self, server_ip, client_ip):
+        try:
+            if self.vpn_transfer:
+                logger.info(
+                    f"Starting VPN transfer test 🚌. Client: {self.provider_name}, server: {ip_provider_name[server_ip]}"
+                )
+
+                if self.scp:
+                    script = self._ctx.new_script()
+                    future_result = script.run(
+                        "/bin/bash",
+                        "-c",
+                        f"scp -v /golem/dummy.dat root@{server_ip}:/golem/upload",
+                    )
+                    yield script
+                    result = (await future_result).stderr
+                    bandwidth_sender_mb_s = parse_scp_result_upload(result)
+
+                    script = self._ctx.new_script()
+                    future_result = script.run(
+                        "/bin/bash",
+                        "-c",
+                        f"scp -v root@{server_ip}:/golem/dummy.dat /golem/download",
+                    )
+                    yield script
+                    result = (await future_result).stderr
+                    bandwidth_receiver_mb_s = parse_scp_result_download(result)
+
+                else:
+                    output_file_vpn_transfer = (
+                        f"vpn_transfer_client_{client_ip}_to_server_{server_ip}_logs.json"
+                    )
+
+                    script = self._ctx.new_script()
+                    script.run(
+                        "/bin/bash",
+                        "-c",
+                        f'iperf3 -c {server_ip} -f M -w 60000 -J | jq \'{{"server":"{ip_provider_name[server_ip]}"}} + .| {{"client":"{self.provider_id}"}} + .\' > /golem/output/{output_file_vpn_transfer}',
+                    )
+                    yield script
+                    script = self._ctx.new_script()
+                    dt = datetime.now().strftime("%Y-%m-%d_%H.%M.%S")
+                    output_file_vpn_transfer_with_date = (
+                        f"{TEMP_PATH}/{dt}_{output_file_vpn_transfer}"
+                    )
+                    script.download_file(
+                        f"/golem/output/{output_file_vpn_transfer}",
+                        f"{output_file_vpn_transfer_with_date}",
+                    )
+                    yield script
+
+                    with open(f"{output_file_vpn_transfer_with_date}") as file:
+                        f = file.read()
+
+                    data = json.loads(f)
+
+                    try:
+                        bandwidth_sender_mb_s = (
+                            (data["end"]["sum_sent"]["bits_per_second"]) / (8 * 1024 * 1024)
+                        ).__round__(3)
+                        bandwidth_receiver_mb_s = (
+                            (data["end"]["sum_received"]["bits_per_second"]) / (8 * 1024 * 1024)
+                        ).__round__(3)
+
+                    except Exception:
+                        error = data["error"]
+
+                        raise Exception(error)
+
+                append_vpn_transfer_list(
+                    self.provider_name,
+                    ip_provider_name[server_ip],
+                    bandwidth_sender_mb_s,
+                    bandwidth_receiver_mb_s,
+                )
+
+                logger.info(
+                    f"Finished VPN transfer test 🎉. Client: {self.provider_name}, server: {ip_provider_name[server_ip]}. Bandwidth: ⬆ sender {bandwidth_sender_mb_s} MByte/s, ⬇ receiver {bandwidth_receiver_mb_s} MByte/s"
+                )
+
+        except Exception as error:
+            append_vpn_transfer_list(self.provider_name, ip_provider_name[server_ip])
+
+            raise Exception(f"💀💀💀 VPN transfer test 💀💀💀 error: {error} . Client: {self.provider_name}, server: {ip_provider_name[server_ip]}.")
+
+    async def test_cmd_output_count(self):
+        try:
             if self.cmd_output_count:
                 logger.info(
-                    f"Starting command output test {self.cmd_output_size} B x {self.cmd_output_count} 🚌. Provider: {self.provider_id}"
+                    f"Starting command output test {self.cmd_output_size} B x {self.cmd_output_count} 🚌. Provider: {self.provider_name}"
                 )
 
                 for _ in range(self.cmd_output_count):
@@ -353,25 +408,13 @@ class PerformanceService(Service):
                     yield script
                     await future_result
 
-                logger.info(f"Finished command output test 🎉. Provider: {self.provider_id}.")
-                append_cmd_output_list(self.provider_id, True)
+                logger.info(f"Finished command output test 🎉. Provider: {self.provider_name}.")
+                append_cmd_output_list(self.provider_name, True)
 
         except Exception as error:
-            logger.info(f" 💀💀💀 Command output test 💀💀💀 error: {error}. Provider: {self.provider_id}.")
-            append_cmd_output_list(self.provider_id, False)
+            append_cmd_output_list(self.provider_name, False)
 
-        logger.info(f"{self.provider_id}: 🎉 finished computing")
-
-        # keep running - nodes may want to compute on this node
-        while len(completion_state) < neighbour_count or not all(
-            [len(c) == neighbour_count for c in completion_state.values()]
-        ):
-            await asyncio.sleep(1)
-
-        logger.info(f"{self.provider_id}: 🚪 exiting")
-
-    async def reset(self):
-        pass
+            raise Exception(f"💀💀💀 Command output test 💀💀💀 error: {error}. Provider: {self.provider_name}.")
 
 
 def append_vpn_transfer_list(
@@ -519,8 +562,25 @@ async def main(
                 os.mkdir(output_dir)
             save_path = output_dir
 
+        if mapping:
+            mapping_json = json.dumps(mapping)
+            print(f"{TEXT_COLOR_CYAN}-------------------------------------------------------")
+            print("Nodes mapping")
+            result = pd.DataFrame(mapping.items(), columns=["node_id", "node_name"])
+            print(f"{result}{TEXT_COLOR_DEFAULT}")
+
+            if download_json:
+                dt = datetime.now().strftime("%Y-%m-%d_%H.%M.%S")
+                file_name = f"nodes-map_{dt}.json"
+                complete_name = os.path.join(save_path, file_name)
+
+                with open(complete_name, "a+") as file:
+                    file.write(mapping_json)
+
         if transfer_list:
-            transfer_result_json = json.dumps(sorted(transfer_list, key=lambda x: x["provider_id"]))
+            transfer_result_json = json.dumps(
+                sorted(transfer_list, key=lambda x: x["provider_name"])
+            )
 
             print(f"{TEXT_COLOR_CYAN}-------------------------------------------------------")
             print(
