@@ -135,7 +135,10 @@ A tool for executing SCP file transfers between hosts. The scripts dumps a summa
 
 - your SSH key needs to be trusted by each node you're executing the script on
 - node id to name map file is mandatory; it serves as a source of input node combinations
-- YAML node file definition file is mandatory; in case that some configuration is missing, try creating a custom definition file
+- YAML node file definition file is mandatory 
+  
+  The file path can be provided via `-y | --yaml` argument(s), via `-d | --dir` argument(s) to automatically locate YAML
+  files, or both.
 
 ## Options
 
@@ -145,3 +148,19 @@ A tool for executing SCP file transfers between hosts. The scripts dumps a summa
 | -y, --yaml          | -       | `yagna-testnet-scripts` YAML node file definition                            |
 | -d, --dir           | -       | directory to scan for YAML node file definitions (e.g. testnet scripts repo) |
 | -s, --size          | 100M    | file size to transfer                                                        |
+
+## Example
+
+```bash
+./cross-scp.sh -n nodes-map.json -d ../yagna-testnet-scripts
+````
+
+`nodes-map.json`
+
+```json
+{
+"0x0acd48076bd190282a23ca6d6add18ee4a1f7871": "DE1-13.h",
+"0xa51979f16829b4370d2e653f39ed49e12cf358de": "GRA11-15.h",
+"0x052877c2324abb1915d25acc3da69e11871f733d": "SBG5-6.h"
+}
+```
