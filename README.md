@@ -125,3 +125,23 @@ Available configuration options:
   - `ports` - (optional) ya-relay client bind ports, specified 1:1 for hosts 
   - `env` - environment variables to create a product of; a test will be run for each entry
   - `time` - testing time in seconds
+
+
+# Cross-SCP
+
+A tool for executing SCP file transfers between hosts. The scripts dumps a summary output file on successful execution.
+
+## Prerequisites
+
+- your SSH key needs to be trusted by each node you're executing the script on
+- node id to name map file is mandatory; it serves as a source of input node combinations
+- YAML node file definition file is mandatory; in case that some configuration is missing, try creating a custom definition file
+
+## Options
+
+| Command line option | Default | Description                                                                  |
+|---------------------|---------|------------------------------------------------------------------------------|
+| -n, --nodes         | -       | Node id to name map file (JSON)                                              |
+| -y, --yaml          | -       | `yagna-testnet-scripts` YAML node file definition                            |
+| -d, --dir           | -       | directory to scan for YAML node file definitions (e.g. testnet scripts repo) |
+| -s, --size          | 100M    | file size to transfer                                                        |
