@@ -207,8 +207,24 @@ class PerformanceService(Service):
         completion_state[client_ip] = set()
 
         logger.info(f"{self.provider_name}: 🏃 running")
-        await asyncio.sleep(5)
 
+        while True:
+            async with lock:
+                if computation_state_server[client_ip] == State.IDLE:
+                    computation_state_client[client_ip] = State.COMPUTING
+                    break
+            await asyncio.sleep(1)
+
+        try:
+            async for i in self.test_cmd_output_count():
+                yield i
+        except Exception as error:
+            logger.info(f"Error: {error}")
+        finally:
+            async with lock:
+                computation_state_client[client_ip] = State.IDLE
+
+        await asyncio.sleep(5)
         while len(completion_state[client_ip]) < neighbour_count:
 
             for server_ip in network_addresses:
@@ -255,12 +271,6 @@ class PerformanceService(Service):
 
             await asyncio.sleep(1)
 
-        try:
-            async for i in self.test_cmd_output_count():
-                yield i
-        except Exception as error:
-            logger.info(f"Error: {error}")
-
         # keep running - nodes may want to compute on this node
         while len(completion_state) < neighbour_count or not all(
             [len(c) == neighbour_count for c in completion_state.values()]
@@ -303,7 +313,9 @@ class PerformanceService(Service):
                 )
 
         except Exception as error:
-            raise Exception(f"💀💀💀 VPN ping test 💀💀💀 error: {error}. Client: {self.provider_name}, server: {ip_provider_name[server_ip]}")
+            raise Exception(
+                f"💀💀💀 VPN ping test 💀💀💀 error: {error}. Client: {self.provider_name}, server: {ip_provider_name[server_ip]}"
+            )
 
     async def test_vpn_transfer(self, server_ip, client_ip):
         try:
@@ -388,7 +400,9 @@ class PerformanceService(Service):
         except Exception as error:
             append_vpn_transfer_list(self.provider_name, ip_provider_name[server_ip])
 
-            raise Exception(f"💀💀💀 VPN transfer test 💀💀💀 error: {error} . Client: {self.provider_name}, server: {ip_provider_name[server_ip]}.")
+            raise Exception(
+                f"💀💀💀 VPN transfer test 💀💀💀 error: {error} . Client: {self.provider_name}, server: {ip_provider_name[server_ip]}."
+            )
 
     async def test_cmd_output_count(self):
         try:
@@ -414,7 +428,9 @@ class PerformanceService(Service):
         except Exception as error:
             append_cmd_output_list(self.provider_name, False)
 
-            raise Exception(f"💀💀💀 Command output test 💀💀💀 error: {error}. Provider: {self.provider_name}.")
+            raise Exception(
+                f"💀💀💀 Command output test 💀💀💀 error: {error}. Provider: {self.provider_name}."
+            )
 
 
 def append_vpn_transfer_list(
