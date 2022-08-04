@@ -51,7 +51,7 @@ TCP window size is set to 60000 bytes. Default performance testing tool can be s
 | --payment-network, --network | rinkeby        | Set payment network name                                                       |
 | --json                       | disabled       | Set the flag and save results in JSON format                                   |
 | --log-file                   | ya-perf        | Log file for YAPAPI                                                            |
-| --running-time               | 1200           | Option to set time the instance run before the cluster is stopped (in seconds) |
+| --running-time               | 7200           | Option to set time the instance run before the cluster is stopped (in seconds) |
 | --output-dir                 | main directory | Sets output directory for results and mapping file                             |
 
 ### Filtering nodes
