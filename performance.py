@@ -11,11 +11,13 @@ from enum import Enum
 import pathlib
 import sys
 
+from typing import Awaitable
 from yapapi.contrib.strategy import ProviderFilter
-from yapapi.script import Script
+from yapapi.events import CommandExecuted
+from yapapi.script import Script, Terminate
 from yapapi.golem import Golem
 from yapapi.payload import vm
-from yapapi.services import Service
+from yapapi.services import Service, ServiceState
 from yapapi.strategy import LeastExpensiveLinearPayuMS
 from yapapi.utils import logger
 
@@ -28,7 +30,7 @@ from utils import (
     TEXT_COLOR_DEFAULT,
     run_golem_example,
     print_env_info,
-    TEXT_COLOR_GREEN,
+    TEXT_COLOR_GREEN, TEXT_COLOR_RED,
 )
 
 # the timeout after we commission our service instances
@@ -54,6 +56,7 @@ vpn_ping_list = []
 vpn_transfer_list = []
 cmd_output_list = []
 mapping = {}
+closed = []
 
 
 class State(Enum):
@@ -83,19 +86,25 @@ class PerformanceScript(Script):
         dt = self.after - self.before
         return (bts / dt).__round__(3)
 
+    # async def terminate(self) -> Awaitable[CommandExecuted]:
+    #     super.terminate
+    #
+    #
+    #     return self.add(Terminate())
+
 
 class PerformanceService(Service):
     def __init__(
-        self,
-        transfer: bool,
-        transfer_file_size: int,
-        vpn_ping: bool,
-        ping_count: int,
-        vpn_transfer: bool,
-        scp: bool,
-        scp_transfer_file_size: int,
-        cmd_output_count: int,
-        cmd_output_size: int,
+            self,
+            transfer: bool,
+            transfer_file_size: int,
+            vpn_ping: bool,
+            ping_count: int,
+            vpn_transfer: bool,
+            scp: bool,
+            scp_transfer_file_size: int,
+            cmd_output_count: int,
+            cmd_output_size: int,
     ):
         super().__init__()
         self.transfer_file_size = transfer_file_size
@@ -199,16 +208,24 @@ class PerformanceService(Service):
         global computation_state_server
         global completion_state
 
-        while len(network_addresses) < len(self.cluster.instances):
-            await asyncio.sleep(1)
+        async with lock:
+            while len(network_addresses) < (len(self.cluster.instances) - len(closed)):
+                await asyncio.sleep(1)
 
         client_ip = self.network_node.ip
-        neighbour_count = len(network_addresses) - 1
+        # neighbour_count = len(network_addresses) - 1
         completion_state[client_ip] = set()
 
         logger.info(f"{self.provider_name}: 🏃 running")
 
         while True:
+            print(f"Node: {self.provider_name}, state: {self.service_instance.state}")
+            if self.service_instance.state == ServiceState.unresponsive:
+                async with lock:
+                    network_addresses.remove(self.provider_id)
+                    closed.append(self.provider_id)
+                    print(f"{TEXT_COLOR_RED}SHUTDOWN{TEXT_COLOR_DEFAULT}")
+                    break
             async with lock:
                 if computation_state_server[client_ip] == State.IDLE:
                     computation_state_client[client_ip] = State.COMPUTING
@@ -225,21 +242,32 @@ class PerformanceService(Service):
                 computation_state_client[client_ip] = State.IDLE
 
         await asyncio.sleep(5)
-        while len(completion_state[client_ip]) < neighbour_count:
+        while len(completion_state[client_ip]) < (len(network_addresses) - 1):
+            await asyncio.sleep(1)
+            # print(f"Node: {self.provider_name}, state: {self.service_instance.state}")
+            # if self.service_instance.state == ServiceState.unresponsive:
+            #     async with lock:
+            #         network_addresses.remove(self.provider_id)
+            #         closed.append(self.provider_id)
+            #         print(f"{TEXT_COLOR_RED}SHUTDOWN{TEXT_COLOR_DEFAULT}")
 
             for server_ip in network_addresses:
+                await lock.acquire()
+
                 if server_ip == client_ip:
+                    lock.release()
                     continue
                 elif server_ip in completion_state[client_ip]:
+                    lock.release()
                     continue
                 elif server_ip not in computation_state_server:
+                    lock.release()
                     continue
 
-                await lock.acquire()
                 if (
-                    computation_state_server[server_ip] != State.IDLE
-                    or computation_state_client[server_ip] != State.IDLE
-                    or computation_state_server[client_ip] != State.IDLE
+                        computation_state_server[server_ip] != State.IDLE
+                        or computation_state_client[server_ip] != State.IDLE
+                        or computation_state_server[client_ip] != State.IDLE
                 ):
                     lock.release()
                     await asyncio.sleep(1)
@@ -275,8 +303,8 @@ class PerformanceService(Service):
             await asyncio.sleep(1)
 
         # keep running - nodes may want to compute on this node
-        while len(completion_state) < neighbour_count or not all(
-            [len(c) == neighbour_count for c in completion_state.values()]
+        while len(completion_state) < (len(network_addresses) - 1) or not all(
+                [len(c) == (len(network_addresses) - 1) for c in completion_state.values()]
         ):
             await asyncio.sleep(1)
 
@@ -440,10 +468,10 @@ class PerformanceService(Service):
 
             try:
                 bandwidth_sender_mb_s = (
-                    (data["end"]["sum_sent"]["bits_per_second"]) / (8 * 1024 * 1024)
+                        (data["end"]["sum_sent"]["bits_per_second"]) / (8 * 1024 * 1024)
                 ).__round__(3)
                 bandwidth_receiver_mb_s = (
-                    (data["end"]["sum_received"]["bits_per_second"]) / (8 * 1024 * 1024)
+                        (data["end"]["sum_received"]["bits_per_second"]) / (8 * 1024 * 1024)
                 ).__round__(3)
 
                 append_vpn_transfer_list(
@@ -468,7 +496,7 @@ class PerformanceService(Service):
 
 
 def append_vpn_transfer_list(
-    client, server, bandwidth_sender_mb_s=None, bandwidth_receiver_mb_s=None
+        client, server, bandwidth_sender_mb_s=None, bandwidth_receiver_mb_s=None
 ):
     vpn_transfer_list.append(
         {
@@ -482,7 +510,7 @@ def append_vpn_transfer_list(
 
 
 def append_vpn_ping_list(
-    client, server, packet_loss_percentage, rtt_min_ms, rtt_avg_ms, rtt_max_ms
+        client, server, packet_loss_percentage, rtt_min_ms, rtt_avg_ms, rtt_max_ms
 ):
     vpn_ping_list.append(
         {
@@ -522,23 +550,23 @@ def parse_scp_result_download(result) -> float:
 
 
 async def main(
-    subnet_tag,
-    payment_driver,
-    payment_network,
-    num_instances,
-    running_time,
-    transfer,
-    transfer_file_size,
-    vpn_ping,
-    ping_count,
-    vpn_transfer,
-    scp,
-    scp_transfer_file_size,
-    cmd_output_count,
-    cmd_output_size,
-    download_json,
-    output_dir,
-    instances=None,
+        subnet_tag,
+        payment_driver,
+        payment_network,
+        num_instances,
+        running_time,
+        transfer,
+        transfer_file_size,
+        vpn_ping,
+        ping_count,
+        vpn_transfer,
+        scp,
+        scp_transfer_file_size,
+        cmd_output_count,
+        cmd_output_size,
+        download_json,
+        output_dir,
+        instances=None,
 ):
     strategy = LeastExpensiveLinearPayuMS()
 
@@ -555,11 +583,11 @@ async def main(
         strategy = ProviderFilter(strategy, lambda provider_id: provider_id in first_n_elements)
 
     async with Golem(
-        budget=100.0,
-        subnet_tag=subnet_tag,
-        payment_driver=payment_driver,
-        payment_network=payment_network,
-        strategy=strategy,
+            budget=100.0,
+            subnet_tag=subnet_tag,
+            payment_driver=payment_driver,
+            payment_network=payment_network,
+            strategy=strategy,
     ) as golem:
         print_env_info(golem)
 
@@ -587,17 +615,17 @@ async def main(
             network=network,
             num_instances=num_instances,
             expiration=datetime.now(timezone.utc)
-            + STARTING_TIMEOUT
-            + EXPIRATION_MARGIN
-            + timedelta(seconds=running_time),
+                       + STARTING_TIMEOUT
+                       + EXPIRATION_MARGIN
+                       + timedelta(seconds=running_time),
         )
 
         start_time = datetime.now()
 
         while (
-            datetime.now() < start_time + timedelta(seconds=running_time)
-            and len(completion_state) < num_instances
-            or not all([len(c) == num_instances - 1 for c in completion_state.values()])
+                datetime.now() < start_time + timedelta(seconds=running_time)
+                and len(completion_state) < num_instances
+                or not all([len(c) == num_instances - 1 for c in completion_state.values()])
         ):
             try:
                 await asyncio.sleep(10)
