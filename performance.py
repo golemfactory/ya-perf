@@ -54,7 +54,6 @@ vpn_ping_list = []
 vpn_transfer_list = []
 cmd_output_list = []
 mapping = {}
-closed = []
 
 
 class State(Enum):
