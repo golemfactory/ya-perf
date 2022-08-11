@@ -54,6 +54,7 @@ vpn_ping_list = []
 vpn_transfer_list = []
 cmd_output_list = []
 mapping = {}
+closed = []
 
 
 class State(Enum):
@@ -215,40 +216,42 @@ class PerformanceService(Service):
                     break
             await asyncio.sleep(1)
 
-            try:
-                if self.cmd_output_count:
-                    logger.info(
-                        f"Starting command output test {self.cmd_output_size} B x {self.cmd_output_count} 🚌. Provider: {self.provider_name}"
-                    )
-
-                    for _ in range(self.cmd_output_count):
-                        script = self._ctx.new_script()
-                        future_result = script.run(
-                            "/bin/bash",
-                            "-c",
-                            f"tr -dc A-Za-z0-9 < /dev/urandom | head -c {self.cmd_output_size}",
-                        )
-
-                        yield script
-                        await future_result
-
-                    logger.info(f"Finished command output test 🎉. Provider: {self.provider_name}.")
-                    append_cmd_output_list(self.provider_name, True)
-
-            except Exception as error:
-                append_cmd_output_list(self.provider_name, False)
-                logger.error(
-                    f"💀💀💀 Command output test 💀💀💀 error: {error}. Provider: {self.provider_name}."
+        try:
+            if self.cmd_output_count:
+                logger.info(
+                    f"Starting command output test {self.cmd_output_size} B x {self.cmd_output_count} 🚌. Provider: {self.provider_name}"
                 )
 
-            finally:
-                async with lock:
-                    computation_state_client[client_ip] = State.IDLE
+                for _ in range(self.cmd_output_count):
+                    script = self._ctx.new_script()
+                    future_result = script.run(
+                        "/bin/bash",
+                        "-c",
+                        f"tr -dc A-Za-z0-9 < /dev/urandom | head -c {self.cmd_output_size}",
+                    )
+
+                    yield script
+                    await future_result
+
+                logger.info(f"Finished command output test 🎉. Provider: {self.provider_name}.")
+                append_cmd_output_list(self.provider_name, True)
+
+        except Exception as error:
+            append_cmd_output_list(self.provider_name, False)
+            logger.error(
+                f"💀💀💀 Command output test 💀💀💀 error: {error}. Provider: {self.provider_name}."
+            )
+
+        finally:
+            async with lock:
+                computation_state_client[client_ip] = State.IDLE
 
         await asyncio.sleep(5)
 
-        while len(completion_state[client_ip]) < (len(network_addresses) - 1):
+        while len(completion_state[client_ip]) < ((len(network_addresses) - 1) - len(closed)):
             for server_ip in network_addresses:
+                if ip_provider_name[server_ip] in closed:
+                    break
                 if server_ip == client_ip:
                     continue
                 elif server_ip in completion_state[client_ip]:
@@ -423,18 +426,23 @@ class PerformanceService(Service):
                             )
 
                 completion_state[client_ip].add(server_ip)
-                logger.info(f"{self.provider_name} ✅ finished on {ip_provider_name[server_ip]}")
+                # logger.info(f"{self.provider_name} ✅ finished on {ip_provider_name[server_ip]}")
+                # print(f"computation_state_server before final unlock: {computation_state_server}")
+                # print(f"computation_state_client before final unlock: {computation_state_client}")
 
                 await lock.acquire()
                 computation_state_server[server_ip] = State.IDLE
                 computation_state_client[client_ip] = State.IDLE
                 lock.release()
 
+                # print(f"computation_state_server after final unlock: {computation_state_server}")
+                # print(f"computation_state_client after final unlock: {computation_state_client}")
+
             await asyncio.sleep(1)
 
         # keep running - nodes may want to compute on this node
-        while len(completion_state) < (len(network_addresses) - 1) or not all(
-            [len(c) == (len(network_addresses) - 1) for c in completion_state.values()]
+        while len(completion_state) < ((len(network_addresses) - 1) - len(closed)) or not all(
+            [len(c) == ((len(network_addresses) - 1) - len(closed)) for c in completion_state.values()]
         ):
             await asyncio.sleep(1)
 
@@ -533,7 +541,7 @@ async def main(
         strategy = ProviderFilter(strategy, lambda provider_id: provider_id in first_n_elements)
 
     async with Golem(
-        budget=100.0,
+        budget=20.0,
         subnet_tag=subnet_tag,
         payment_driver=payment_driver,
         payment_network=payment_network,
@@ -570,12 +578,20 @@ async def main(
             + timedelta(seconds=running_time),
         )
 
+        # def event_consumer(event: "yapapi.events.AgreementTerminated"):
+        #     provider_name = event.agreement.details.provider_node_info.name
+        #     print(f"{provider_name} failed! Shame on you!")
+        #     if provider_name in mapping.values():
+        #         closed.append(provider_name)
+        #
+        # golem.add_event_consumer(event_consumer, ["AgreementTerminated"])
+
         start_time = datetime.now()
 
         while (
             datetime.now() < start_time + timedelta(seconds=running_time)
-            and len(completion_state) < num_instances
-            or not all([len(c) == num_instances - 1 for c in completion_state.values()])
+            and (len(completion_state) - len(closed)) < (num_instances - len(closed))
+            or not all([(len(c) - len(closed)) == (num_instances - 1 - len(closed)) for c in completion_state.values()])
         ):
             try:
                 await asyncio.sleep(10)
@@ -589,6 +605,9 @@ async def main(
             if not os.path.exists(output_dir):
                 os.mkdir(output_dir)
             save_path = output_dir
+
+        if closed:
+            print(closed)
 
         if mapping:
             mapping_json = json.dumps(mapping)
