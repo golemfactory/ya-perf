@@ -87,16 +87,16 @@ class PerformanceScript(Script):
 
 class PerformanceService(Service):
     def __init__(
-        self,
-        transfer: bool,
-        transfer_file_size: int,
-        vpn_ping: bool,
-        ping_count: int,
-        vpn_transfer: bool,
-        scp: bool,
-        scp_transfer_file_size: int,
-        cmd_output_count: int,
-        cmd_output_size: int,
+            self,
+            transfer: bool,
+            transfer_file_size: int,
+            vpn_ping: bool,
+            ping_count: int,
+            vpn_transfer: bool,
+            scp: bool,
+            scp_transfer_file_size: int,
+            cmd_output_count: int,
+            cmd_output_size: int,
     ):
         super().__init__()
         self.transfer_file_size = transfer_file_size
@@ -115,6 +115,7 @@ class PerformanceService(Service):
             image_hash="3f521a6f14ffb4564c656cfc73fed7bf2dc2b146a25877af9f13c88d",
             min_mem_gib=1.0,
             min_storage_gib=0.5,
+            min_cpu_threads=1,
         )
 
     async def start(self):
@@ -142,50 +143,52 @@ class PerformanceService(Service):
         computation_state_server[server_ip] = State.IDLE
         computation_state_client[server_ip] = State.IDLE
 
+        await lock.acquire()
         if self.transfer:
 
             async def dummy(v):
                 pass
 
-            async with lock:
-                try:
-                    value = bytes(self.transfer_file_size * 1024 * 1024)
-                    path = "/golem/output/dummy"
-                    logger.info(f"Provider: {self.provider_name}. 🚀 Starting transfer test. ")
-                    script = self._ctx.new_script()
-                    script.upload_bytes(value, path)
-                    script = PerformanceScript(script)
-                    yield script
-                    upload = script.calculate_transfer(self.transfer_file_size)
+            try:
+                value = bytes(self.transfer_file_size * 1024 * 1024)
+                path = "/golem/output/dummy"
+                logger.info(f"Provider: {self.provider_name}. 🚀 Starting transfer test. ")
+                script = self._ctx.new_script()
+                script.upload_bytes(value, path)
+                script = PerformanceScript(script)
+                yield script
+                upload = script.calculate_transfer(self.transfer_file_size)
 
-                    script = self._ctx.new_script()
-                    script.download_bytes(path, on_download=dummy)
-                    script = PerformanceScript(script)
-                    yield script
+                script = self._ctx.new_script()
+                script.download_bytes(path, on_download=dummy)
+                script = PerformanceScript(script)
+                yield script
 
-                    download = script.calculate_transfer(self.transfer_file_size)
-                    logger.info(
-                        f"Provider: {self.provider_name}. 🎉 Finished transfer test: ⬆ upload {upload} MByte/s, ⬇ download {download} MByte/s"
-                    )
-                    transfer_list.append(
-                        {
-                            "provider_name": self.provider_name,
-                            "upload_mb_s": upload,
-                            "download_mb_s": download,
-                        }
-                    )
+                download = script.calculate_transfer(self.transfer_file_size)
+                logger.info(
+                    f"Provider: {self.provider_name}. 🎉 Finished transfer test: ⬆ upload {upload} MByte/s, ⬇ download {download} MByte/s"
+                )
+                transfer_list.append(
+                    {
+                        "provider_name": self.provider_name,
+                        "upload_mb_s": upload,
+                        "download_mb_s": download,
+                    }
+                )
 
-                    network_addresses.append(server_ip)
-                    mapping.update(
-                        {
-                            self.provider_id: self.provider_name,
-                        }
-                    )
+                network_addresses.append(server_ip)
+                mapping.update(
+                    {
+                        self.provider_id: self.provider_name,
+                    }
+                )
 
-                except Exception as error:
-                    logger.info(
-                        f" 💀💀💀 Transfer test 💀💀💀 error: {error}. Provider: {self.provider_name}."
-                    )
+            except Exception as error:
+                logger.info(
+                    f" 💀💀💀 Transfer test 💀💀💀 error: {error}. Provider: {self.provider_name}."
+                )
+            finally:
+                lock.release()
 
         else:
             network_addresses.append(server_ip)
@@ -194,15 +197,15 @@ class PerformanceService(Service):
                     self.provider_id: self.provider_name,
                 }
             )
+            lock.release()
 
     async def run(self):
         global computation_state_client
         global computation_state_server
         global completion_state
 
-        async with lock:
-            while len(network_addresses) < (len(self.cluster.instances) - len(closed)):
-                await asyncio.sleep(1)
+        while len(network_addresses) < (len(self.cluster.instances) - len(closed)):
+            await asyncio.sleep(2)
 
         client_ip = self.network_node.ip
         completion_state[client_ip] = set()
@@ -251,7 +254,7 @@ class PerformanceService(Service):
         while len(completion_state[client_ip]) < ((len(network_addresses) - 1) - len(closed)):
             for server_ip in network_addresses:
                 if ip_provider_name[server_ip] in closed:
-                    break
+                    continue
                 if server_ip == client_ip:
                     continue
                 elif server_ip in completion_state[client_ip]:
@@ -261,9 +264,9 @@ class PerformanceService(Service):
 
                 await lock.acquire()
                 if (
-                    computation_state_server[server_ip] != State.IDLE
-                    or computation_state_client[server_ip] != State.IDLE
-                    or computation_state_server[client_ip] != State.IDLE
+                        computation_state_server[server_ip] != State.IDLE
+                        or computation_state_client[server_ip] != State.IDLE
+                        or computation_state_server[client_ip] != State.IDLE
                 ):
                     lock.release()
                     await asyncio.sleep(1)
@@ -346,11 +349,11 @@ class PerformanceService(Service):
 
                             try:
                                 bandwidth_sender_mb_s = (
-                                    (data["end"]["sum_sent"]["bits_per_second"]) / (8 * 1024 * 1024)
+                                        (data["end"]["sum_sent"]["bits_per_second"]) / (8 * 1024 * 1024)
                                 ).__round__(3)
                                 bandwidth_receiver_mb_s = (
-                                    (data["end"]["sum_received"]["bits_per_second"])
-                                    / (8 * 1024 * 1024)
+                                        (data["end"]["sum_received"]["bits_per_second"])
+                                        / (8 * 1024 * 1024)
                                 ).__round__(3)
 
                                 append_vpn_transfer_list(
@@ -426,7 +429,7 @@ class PerformanceService(Service):
                             )
 
                 completion_state[client_ip].add(server_ip)
-                # logger.info(f"{self.provider_name} ✅ finished on {ip_provider_name[server_ip]}")
+                logger.info(f"{self.provider_name} ✅ finished on {ip_provider_name[server_ip]}")
                 # print(f"computation_state_server before final unlock: {computation_state_server}")
                 # print(f"computation_state_client before final unlock: {computation_state_client}")
 
@@ -442,7 +445,10 @@ class PerformanceService(Service):
 
         # keep running - nodes may want to compute on this node
         while len(completion_state) < ((len(network_addresses) - 1) - len(closed)) or not all(
-            [len(c) == ((len(network_addresses) - 1) - len(closed)) for c in completion_state.values()]
+                [
+                    len(c) == ((len(network_addresses) - 1) - len(closed))
+                    for c in completion_state.values()
+                ]
         ):
             await asyncio.sleep(1)
 
@@ -454,7 +460,7 @@ class PerformanceService(Service):
 
 
 def append_vpn_transfer_list(
-    client, server, bandwidth_sender_mb_s=None, bandwidth_receiver_mb_s=None
+        client, server, bandwidth_sender_mb_s=None, bandwidth_receiver_mb_s=None
 ):
     vpn_transfer_list.append(
         {
@@ -468,7 +474,7 @@ def append_vpn_transfer_list(
 
 
 def append_vpn_ping_list(
-    client, server, packet_loss_percentage, rtt_min_ms, rtt_avg_ms, rtt_max_ms
+        client, server, packet_loss_percentage, rtt_min_ms, rtt_avg_ms, rtt_max_ms
 ):
     vpn_ping_list.append(
         {
@@ -508,23 +514,23 @@ def parse_scp_result_download(result) -> float:
 
 
 async def main(
-    subnet_tag,
-    payment_driver,
-    payment_network,
-    num_instances,
-    running_time,
-    transfer,
-    transfer_file_size,
-    vpn_ping,
-    ping_count,
-    vpn_transfer,
-    scp,
-    scp_transfer_file_size,
-    cmd_output_count,
-    cmd_output_size,
-    download_json,
-    output_dir,
-    instances=None,
+        subnet_tag,
+        payment_driver,
+        payment_network,
+        num_instances,
+        running_time,
+        transfer,
+        transfer_file_size,
+        vpn_ping,
+        ping_count,
+        vpn_transfer,
+        scp,
+        scp_transfer_file_size,
+        cmd_output_count,
+        cmd_output_size,
+        download_json,
+        output_dir,
+        instances=None,
 ):
     strategy = LeastExpensiveLinearPayuMS()
 
@@ -541,11 +547,11 @@ async def main(
         strategy = ProviderFilter(strategy, lambda provider_id: provider_id in first_n_elements)
 
     async with Golem(
-        budget=20.0,
-        subnet_tag=subnet_tag,
-        payment_driver=payment_driver,
-        payment_network=payment_network,
-        strategy=strategy,
+            budget=20.0,
+            subnet_tag=subnet_tag,
+            payment_driver=payment_driver,
+            payment_network=payment_network,
+            strategy=strategy,
     ) as golem:
         print_env_info(golem)
 
@@ -573,25 +579,30 @@ async def main(
             network=network,
             num_instances=num_instances,
             expiration=datetime.now(timezone.utc)
-            + STARTING_TIMEOUT
-            + EXPIRATION_MARGIN
-            + timedelta(seconds=running_time),
+                       + STARTING_TIMEOUT
+                       + EXPIRATION_MARGIN
+                       + timedelta(seconds=running_time),
         )
 
-        # def event_consumer(event: "yapapi.events.AgreementTerminated"):
-        #     provider_name = event.agreement.details.provider_node_info.name
-        #     print(f"{provider_name} failed! Shame on you!")
-        #     if provider_name in mapping.values():
-        #         closed.append(provider_name)
-        #
-        # golem.add_event_consumer(event_consumer, ["AgreementTerminated"])
+        def event_consumer(event: "yapapi.events.AgreementTerminated"):
+            provider_name = event.agreement.details.provider_node_info.name
+            if provider_name in mapping.values():
+                print(f"{provider_name} failed! Shame on you!")
+                closed.append(provider_name)
+
+        golem.add_event_consumer(event_consumer, ["AgreementTerminated"])
 
         start_time = datetime.now()
 
         while (
-            datetime.now() < start_time + timedelta(seconds=running_time)
-            and (len(completion_state) - len(closed)) < (num_instances - len(closed))
-            or not all([(len(c) - len(closed)) == (num_instances - 1 - len(closed)) for c in completion_state.values()])
+                datetime.now() < start_time + timedelta(seconds=running_time)
+                and len(completion_state) < (num_instances - len(closed))
+                or not all(
+            [
+                (len(c) - len(closed)) == (num_instances - 1 - len(closed))
+                for c in completion_state.values()
+            ]
+        )
         ):
             try:
                 await asyncio.sleep(10)
