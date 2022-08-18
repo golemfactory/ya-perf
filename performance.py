@@ -54,12 +54,17 @@ vpn_ping_list = []
 vpn_transfer_list = []
 cmd_output_list = []
 mapping = {}
-closed = []
+current_computation = {}
+completion_counter = {}
+
+
+# closed = []
 
 
 class State(Enum):
     IDLE = 0
     COMPUTING = 1
+    FINISHED = 2
 
 
 class PerformanceScript(Script):
@@ -187,6 +192,20 @@ class PerformanceService(Service):
                 logger.info(
                     f" 💀💀💀 Transfer test 💀💀💀 error: {error}. Provider: {self.provider_name}."
                 )
+
+                transfer_list.append(
+                    {
+                        "provider_name": self.provider_name,
+                        "upload_mb_s": None,
+                        "download_mb_s": None,
+                    }
+                )
+                network_addresses.append(server_ip)
+                mapping.update(
+                    {
+                        self.provider_id: self.provider_name,
+                    }
+                )
             finally:
                 lock.release()
 
@@ -203,19 +222,23 @@ class PerformanceService(Service):
         global computation_state_client
         global computation_state_server
         global completion_state
+        global completion_counter
 
-        while len(network_addresses) < (len(self.cluster.instances) - len(closed)):
+        while len(network_addresses) < len(self.cluster.instances):
             await asyncio.sleep(2)
 
         client_ip = self.network_node.ip
         completion_state[client_ip] = set()
+        completion_counter[client_ip] = 0
 
         logger.info(f"{self.provider_name}: 🏃 running")
 
         while True:
             async with lock:
-                if computation_state_server[client_ip] == State.IDLE:
+                if computation_state_client[client_ip] == State.IDLE and computation_state_server[
+                    client_ip] == State.IDLE:
                     computation_state_client[client_ip] = State.COMPUTING
+                    computation_state_server[client_ip] = State.COMPUTING
                     break
             await asyncio.sleep(1)
 
@@ -248,32 +271,40 @@ class PerformanceService(Service):
         finally:
             async with lock:
                 computation_state_client[client_ip] = State.IDLE
+                computation_state_server[client_ip] = State.IDLE
 
         await asyncio.sleep(5)
 
-        while len(completion_state[client_ip]) < ((len(network_addresses) - 1) - len(closed)):
+        while completion_counter[client_ip] < (len(network_addresses) - 1):
+            print("while begins")
+            print(f"Completion state when node: {self.provider_name} finished: {len(completion_state.keys())}")
+            print(
+                f"Network addresses when node: {self.provider_name} finished: {len(network_addresses)}"
+            )
             for server_ip in network_addresses:
-                if ip_provider_name[server_ip] in closed:
-                    continue
+                print(f"completion counter for: {client_ip} is now: {completion_counter[client_ip]}")
                 if server_ip == client_ip:
                     continue
-                elif server_ip in completion_state[client_ip]:
+                if server_ip in completion_state[client_ip]:
                     continue
-                elif server_ip not in computation_state_server:
+                if server_ip not in computation_state_server:
                     continue
+
+                await asyncio.sleep(5)
 
                 await lock.acquire()
                 if (
                         computation_state_server[server_ip] != State.IDLE
-                        or computation_state_client[server_ip] != State.IDLE
+                        or computation_state_client[server_ip] == State.COMPUTING
                         or computation_state_server[client_ip] != State.IDLE
                 ):
+                    print(f"here")
                     lock.release()
-                    await asyncio.sleep(1)
                     continue
 
                 computation_state_server[server_ip] = State.COMPUTING
                 computation_state_client[client_ip] = State.COMPUTING
+                current_computation[server_ip] = client_ip
                 lock.release()
 
                 logger.info(f"{self.provider_name} 🔄 computing on {ip_provider_name[server_ip]}")
@@ -428,31 +459,30 @@ class PerformanceService(Service):
                                 f"💀💀💀 VPN transfer test 💀💀💀 error: {error}. Client: {self.provider_name}, server: {ip_provider_name[server_ip]}"
                             )
 
-                completion_state[client_ip].add(server_ip)
                 logger.info(f"{self.provider_name} ✅ finished on {ip_provider_name[server_ip]}")
-                # print(f"computation_state_server before final unlock: {computation_state_server}")
-                # print(f"computation_state_client before final unlock: {computation_state_client}")
 
-                await lock.acquire()
+                # await lock.acquire()
+                del current_computation[server_ip]
+                completion_state[client_ip].add(server_ip)
+                completion_counter[client_ip] = completion_counter[client_ip] + 1
                 computation_state_server[server_ip] = State.IDLE
                 computation_state_client[client_ip] = State.IDLE
-                lock.release()
+                # lock.release()
 
-                # print(f"computation_state_server after final unlock: {computation_state_server}")
-                # print(f"computation_state_client after final unlock: {computation_state_client}")
+            await asyncio.sleep(3)
 
-            await asyncio.sleep(1)
+        logger.info(f"{self.provider_name}: 🎉 finished computing on other nodes")
+        computation_state_client[client_ip] = State.FINISHED
 
         # keep running - nodes may want to compute on this node
-        while len(completion_state) < ((len(network_addresses) - 1) - len(closed)) or not all(
-                [
-                    len(c) == ((len(network_addresses) - 1) - len(closed))
-                    for c in completion_state.values()
-                ]
+        # while len(completion_state) < (len(network_addresses) - 1) or not all(
+        #         [len(c) >= (len(network_addresses) - 1) for c in completion_state.values()]
+        # ):
+        while not all(
+                [client_state == State.FINISHED for client_state in computation_state_client.values()]
         ):
             await asyncio.sleep(1)
 
-        logger.info(f"{self.provider_name}: 🎉 finished computing")
         logger.info(f"{self.provider_name}: 🚪 exiting")
 
     async def reset(self):
@@ -585,10 +615,40 @@ async def main(
         )
 
         def event_consumer(event: "yapapi.events.AgreementTerminated"):
-            provider_name = event.agreement.details.provider_node_info.name
-            if provider_name in mapping.values():
-                print(f"{provider_name} failed! Shame on you!")
-                closed.append(provider_name)
+            fail_provider = event.agreement.details.provider_node_info.name
+            # Check if Provider is already listed as the test node
+            if fail_provider in mapping.values():
+                print(f"{fail_provider} failed! Shame on you!")
+                for ip_fail_provider, name_fail_provider in ip_provider_name.items():
+                    if name_fail_provider == fail_provider:
+                        network_addresses.remove(ip_fail_provider)
+                        # Delete from completion_state dictionary
+                        # del completion_state[ip_fail_provider]
+                        for ip, completed_set in completion_state.items():
+                            completion_counter[ip] = completion_counter[ip] + 1
+                            if ip_fail_provider in completed_set:
+                                completed_set.remove(ip_fail_provider)
+                                if computation_state_client[ip_fail_provider] != State.FINISHED:
+                                    computation_state_client.pop(ip_fail_provider)
+                        # Change state of client if server failed
+                        if ip_fail_provider in current_computation.keys():
+                            if computation_state_client[current_computation[ip_fail_provider]] != State.FINISHED:
+                                computation_state_client[current_computation[ip_fail_provider]] = State.IDLE
+                                print(
+                                    f"Changed computation state client {current_computation[ip_fail_provider]} to: State.IDLE"
+                                )
+                        # Change state of server if client failed
+                        if ip_fail_provider in current_computation.values():
+                            key_list = list(current_computation.keys())
+                            val_list = list(current_computation.values())
+                            server_ip = key_list[val_list.index(ip_fail_provider)]
+                            computation_state_server[server_ip] = State.IDLE
+                            print(
+                                f"Changed computation state server {server_ip} to: State.IDLE"
+                            )
+                        print(
+                            f"{fail_provider} having IP addr {ip_fail_provider} removed from network addresses"
+                        )
 
         golem.add_event_consumer(event_consumer, ["AgreementTerminated"])
 
@@ -596,15 +656,21 @@ async def main(
 
         while (
                 datetime.now() < start_time + timedelta(seconds=running_time)
-                and len(completion_state) < (num_instances - len(closed))
+                and len(computation_state_client) == 0
                 or not all(
             [
-                (len(c) - len(closed)) == (num_instances - 1 - len(closed))
-                for c in completion_state.values()
+                client_state == State.FINISHED
+                for client_state in computation_state_client.values()
             ]
         )
+                # and len(completion_state) < min(num_instances, len(network_addresses))
+                # or not all([len(c) == min(num_instances, len(network_addresses)) - 1 for c in completion_state.values()])
         ):
             try:
+                print("---beggining---")
+                print(f"computation state client (len{len(computation_state_client)}): {computation_state_client}")
+                print("-------")
+                print(f"computation state server(len{len(computation_state_server)}): {computation_state_server}")
                 await asyncio.sleep(10)
             except (KeyboardInterrupt, asyncio.CancelledError):
                 break
@@ -616,9 +682,6 @@ async def main(
             if not os.path.exists(output_dir):
                 os.mkdir(output_dir)
             save_path = output_dir
-
-        if closed:
-            print(closed)
 
         if mapping:
             mapping_json = json.dumps(mapping)
