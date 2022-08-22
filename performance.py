@@ -136,7 +136,13 @@ class PerformanceService(Service):
                 f" 💀💀💀 Starting instance 💀💀💀 error: {error}. Provider: {self.provider_name}."
             )
 
-        server_ip = self.network_node.ip
+        import random
+        import socket
+        import struct
+        server_ip = socket.inet_ntoa(struct.pack('>I', random.randint(1, 0xffffffff)))
+        self.ip = server_ip
+
+        #server_ip = self.network_node.ip
         ip_provider_name[server_ip] = self.provider_name
         computation_state_server[server_ip] = State.IDLE
         computation_state_client[server_ip] = State.IDLE
@@ -202,9 +208,11 @@ class PerformanceService(Service):
         while len(network_addresses) < len(self.cluster.instances):
             await asyncio.sleep(1)
 
-        client_ip = self.network_node.ip
+        client_ip = self.ip
         neighbour_count = len(network_addresses) - 1
         completion_state[client_ip] = set()
+
+
 
         logger.info(f"{self.provider_name}: 🏃 running")
 
@@ -531,7 +539,8 @@ async def main(
 
         global network_addresses
 
-        network = await golem.create_network("192.168.0.1/24")
+        #network = await golem.create_network("192.168.0.1/24")
+        network = None
         os.makedirs(TEMP_PATH, exist_ok=True)
 
         cluster = await golem.run_service(
