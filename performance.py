@@ -92,16 +92,16 @@ class PerformanceScript(Script):
 
 class PerformanceService(Service):
     def __init__(
-            self,
-            transfer: bool,
-            transfer_file_size: int,
-            vpn_ping: bool,
-            ping_count: int,
-            vpn_transfer: bool,
-            scp: bool,
-            scp_transfer_file_size: int,
-            cmd_output_count: int,
-            cmd_output_size: int,
+        self,
+        transfer: bool,
+        transfer_file_size: int,
+        vpn_ping: bool,
+        ping_count: int,
+        vpn_transfer: bool,
+        scp: bool,
+        scp_transfer_file_size: int,
+        cmd_output_count: int,
+        cmd_output_size: int,
     ):
         super().__init__()
         self.transfer_file_size = transfer_file_size
@@ -235,8 +235,10 @@ class PerformanceService(Service):
 
         while True:
             async with lock:
-                if computation_state_client[client_ip] == State.IDLE and computation_state_server[
-                    client_ip] == State.IDLE:
+                if (
+                    computation_state_client[client_ip] == State.IDLE
+                    and computation_state_server[client_ip] == State.IDLE
+                ):
                     computation_state_client[client_ip] = State.COMPUTING
                     computation_state_server[client_ip] = State.COMPUTING
                     break
@@ -276,13 +278,8 @@ class PerformanceService(Service):
         await asyncio.sleep(5)
 
         while completion_counter[client_ip] < (len(network_addresses) - 1):
-            print("while begins")
-            print(f"Completion state when node: {self.provider_name} finished: {len(completion_state.keys())}")
-            print(
-                f"Network addresses when node: {self.provider_name} finished: {len(network_addresses)}"
-            )
             for server_ip in network_addresses:
-                print(f"completion counter for: {client_ip} is now: {completion_counter[client_ip]}")
+                current_computation[server_ip] = client_ip
                 if server_ip == client_ip:
                     continue
                 if server_ip in completion_state[client_ip]:
@@ -294,17 +291,15 @@ class PerformanceService(Service):
 
                 await lock.acquire()
                 if (
-                        computation_state_server[server_ip] != State.IDLE
-                        or computation_state_client[server_ip] == State.COMPUTING
-                        or computation_state_server[client_ip] != State.IDLE
+                    computation_state_server[server_ip] != State.IDLE
+                    or computation_state_client[server_ip] == State.COMPUTING
+                    or computation_state_server[client_ip] != State.IDLE
                 ):
-                    print(f"here")
                     lock.release()
                     continue
 
                 computation_state_server[server_ip] = State.COMPUTING
                 computation_state_client[client_ip] = State.COMPUTING
-                current_computation[server_ip] = client_ip
                 lock.release()
 
                 logger.info(f"{self.provider_name} 🔄 computing on {ip_provider_name[server_ip]}")
@@ -380,11 +375,11 @@ class PerformanceService(Service):
 
                             try:
                                 bandwidth_sender_mb_s = (
-                                        (data["end"]["sum_sent"]["bits_per_second"]) / (8 * 1024 * 1024)
+                                    (data["end"]["sum_sent"]["bits_per_second"]) / (8 * 1024 * 1024)
                                 ).__round__(3)
                                 bandwidth_receiver_mb_s = (
-                                        (data["end"]["sum_received"]["bits_per_second"])
-                                        / (8 * 1024 * 1024)
+                                    (data["end"]["sum_received"]["bits_per_second"])
+                                    / (8 * 1024 * 1024)
                                 ).__round__(3)
 
                                 append_vpn_transfer_list(
@@ -461,15 +456,14 @@ class PerformanceService(Service):
 
                 logger.info(f"{self.provider_name} ✅ finished on {ip_provider_name[server_ip]}")
 
-                # await lock.acquire()
-                del current_computation[server_ip]
+                await lock.acquire()
                 completion_state[client_ip].add(server_ip)
                 completion_counter[client_ip] = completion_counter[client_ip] + 1
                 computation_state_server[server_ip] = State.IDLE
                 computation_state_client[client_ip] = State.IDLE
-                # lock.release()
+                lock.release()
 
-            await asyncio.sleep(3)
+        await asyncio.sleep(3)
 
         logger.info(f"{self.provider_name}: 🎉 finished computing on other nodes")
         computation_state_client[client_ip] = State.FINISHED
@@ -479,7 +473,7 @@ class PerformanceService(Service):
         #         [len(c) >= (len(network_addresses) - 1) for c in completion_state.values()]
         # ):
         while not all(
-                [client_state == State.FINISHED for client_state in computation_state_client.values()]
+            [client_state == State.FINISHED for client_state in computation_state_client.values()]
         ):
             await asyncio.sleep(1)
 
@@ -490,7 +484,7 @@ class PerformanceService(Service):
 
 
 def append_vpn_transfer_list(
-        client, server, bandwidth_sender_mb_s=None, bandwidth_receiver_mb_s=None
+    client, server, bandwidth_sender_mb_s=None, bandwidth_receiver_mb_s=None
 ):
     vpn_transfer_list.append(
         {
@@ -504,7 +498,7 @@ def append_vpn_transfer_list(
 
 
 def append_vpn_ping_list(
-        client, server, packet_loss_percentage, rtt_min_ms, rtt_avg_ms, rtt_max_ms
+    client, server, packet_loss_percentage, rtt_min_ms, rtt_avg_ms, rtt_max_ms
 ):
     vpn_ping_list.append(
         {
@@ -544,23 +538,23 @@ def parse_scp_result_download(result) -> float:
 
 
 async def main(
-        subnet_tag,
-        payment_driver,
-        payment_network,
-        num_instances,
-        running_time,
-        transfer,
-        transfer_file_size,
-        vpn_ping,
-        ping_count,
-        vpn_transfer,
-        scp,
-        scp_transfer_file_size,
-        cmd_output_count,
-        cmd_output_size,
-        download_json,
-        output_dir,
-        instances=None,
+    subnet_tag,
+    payment_driver,
+    payment_network,
+    num_instances,
+    running_time,
+    transfer,
+    transfer_file_size,
+    vpn_ping,
+    ping_count,
+    vpn_transfer,
+    scp,
+    scp_transfer_file_size,
+    cmd_output_count,
+    cmd_output_size,
+    download_json,
+    output_dir,
+    instances=None,
 ):
     strategy = LeastExpensiveLinearPayuMS()
 
@@ -577,11 +571,11 @@ async def main(
         strategy = ProviderFilter(strategy, lambda provider_id: provider_id in first_n_elements)
 
     async with Golem(
-            budget=20.0,
-            subnet_tag=subnet_tag,
-            payment_driver=payment_driver,
-            payment_network=payment_network,
-            strategy=strategy,
+        budget=20.0,
+        subnet_tag=subnet_tag,
+        payment_driver=payment_driver,
+        payment_network=payment_network,
+        strategy=strategy,
     ) as golem:
         print_env_info(golem)
 
@@ -609,68 +603,52 @@ async def main(
             network=network,
             num_instances=num_instances,
             expiration=datetime.now(timezone.utc)
-                       + STARTING_TIMEOUT
-                       + EXPIRATION_MARGIN
-                       + timedelta(seconds=running_time),
+            + STARTING_TIMEOUT
+            + EXPIRATION_MARGIN
+            + timedelta(seconds=running_time),
         )
 
         def event_consumer(event: "yapapi.events.AgreementTerminated"):
             fail_provider = event.agreement.details.provider_node_info.name
             # Check if Provider is already listed as the test node
             if fail_provider in mapping.values():
-                print(f"{fail_provider} failed! Shame on you!")
                 for ip_fail_provider, name_fail_provider in ip_provider_name.items():
                     if name_fail_provider == fail_provider:
                         network_addresses.remove(ip_fail_provider)
-                        # Delete from completion_state dictionary
-                        # del completion_state[ip_fail_provider]
+                        computation_state_client[ip_fail_provider] = State.FINISHED
                         for ip, completed_set in completion_state.items():
                             completion_counter[ip] = completion_counter[ip] + 1
                             if ip_fail_provider in completed_set:
                                 completed_set.remove(ip_fail_provider)
-                                if computation_state_client[ip_fail_provider] != State.FINISHED:
-                                    computation_state_client.pop(ip_fail_provider)
-                        # Change state of client if server failed
                         if ip_fail_provider in current_computation.keys():
-                            if computation_state_client[current_computation[ip_fail_provider]] != State.FINISHED:
-                                computation_state_client[current_computation[ip_fail_provider]] = State.IDLE
-                                print(
-                                    f"Changed computation state client {current_computation[ip_fail_provider]} to: State.IDLE"
-                                )
-                        # Change state of server if client failed
+                            if (
+                                computation_state_client[current_computation[ip_fail_provider]]
+                                != State.FINISHED
+                            ):
+                                computation_state_client[
+                                    current_computation[ip_fail_provider]
+                                ] = State.IDLE
                         if ip_fail_provider in current_computation.values():
                             key_list = list(current_computation.keys())
                             val_list = list(current_computation.values())
                             server_ip = key_list[val_list.index(ip_fail_provider)]
                             computation_state_server[server_ip] = State.IDLE
-                            print(
-                                f"Changed computation state server {server_ip} to: State.IDLE"
-                            )
-                        print(
-                            f"{fail_provider} having IP addr {ip_fail_provider} removed from network addresses"
-                        )
 
         golem.add_event_consumer(event_consumer, ["AgreementTerminated"])
 
         start_time = datetime.now()
 
         while (
-                datetime.now() < start_time + timedelta(seconds=running_time)
-                and len(computation_state_client) == 0
-                or not all(
-            [
-                client_state == State.FINISHED
-                for client_state in computation_state_client.values()
-            ]
-        )
-                # and len(completion_state) < min(num_instances, len(network_addresses))
-                # or not all([len(c) == min(num_instances, len(network_addresses)) - 1 for c in completion_state.values()])
+            datetime.now() < start_time + timedelta(seconds=running_time)
+            and len(computation_state_client) == 0
+            or not all(
+                [
+                    client_state == State.FINISHED
+                    for client_state in computation_state_client.values()
+                ]
+            )
         ):
             try:
-                print("---beggining---")
-                print(f"computation state client (len{len(computation_state_client)}): {computation_state_client}")
-                print("-------")
-                print(f"computation state server(len{len(computation_state_server)}): {computation_state_server}")
                 await asyncio.sleep(10)
             except (KeyboardInterrupt, asyncio.CancelledError):
                 break
