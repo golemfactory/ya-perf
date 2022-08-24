@@ -58,9 +58,6 @@ current_computation = {}
 completion_counter = {}
 
 
-# closed = []
-
-
 class State(Enum):
     IDLE = 0
     COMPUTING = 1
@@ -92,16 +89,16 @@ class PerformanceScript(Script):
 
 class PerformanceService(Service):
     def __init__(
-        self,
-        transfer: bool,
-        transfer_file_size: int,
-        vpn_ping: bool,
-        ping_count: int,
-        vpn_transfer: bool,
-        scp: bool,
-        scp_transfer_file_size: int,
-        cmd_output_count: int,
-        cmd_output_size: int,
+            self,
+            transfer: bool,
+            transfer_file_size: int,
+            vpn_ping: bool,
+            ping_count: int,
+            vpn_transfer: bool,
+            scp: bool,
+            scp_transfer_file_size: int,
+            cmd_output_count: int,
+            cmd_output_size: int,
     ):
         super().__init__()
         self.transfer_file_size = transfer_file_size
@@ -236,8 +233,8 @@ class PerformanceService(Service):
         while True:
             async with lock:
                 if (
-                    computation_state_client[client_ip] == State.IDLE
-                    and computation_state_server[client_ip] == State.IDLE
+                        computation_state_client[client_ip] == State.IDLE
+                        and computation_state_server[client_ip] == State.IDLE
                 ):
                     computation_state_client[client_ip] = State.COMPUTING
                     computation_state_server[client_ip] = State.COMPUTING
@@ -291,9 +288,9 @@ class PerformanceService(Service):
 
                 await lock.acquire()
                 if (
-                    computation_state_server[server_ip] != State.IDLE
-                    or computation_state_client[server_ip] == State.COMPUTING
-                    or computation_state_server[client_ip] != State.IDLE
+                        computation_state_server[server_ip] != State.IDLE
+                        or computation_state_client[server_ip] == State.COMPUTING
+                        or computation_state_server[client_ip] != State.IDLE
                 ):
                     lock.release()
                     continue
@@ -375,11 +372,11 @@ class PerformanceService(Service):
 
                             try:
                                 bandwidth_sender_mb_s = (
-                                    (data["end"]["sum_sent"]["bits_per_second"]) / (8 * 1024 * 1024)
+                                        (data["end"]["sum_sent"]["bits_per_second"]) / (8 * 1024 * 1024)
                                 ).__round__(3)
                                 bandwidth_receiver_mb_s = (
-                                    (data["end"]["sum_received"]["bits_per_second"])
-                                    / (8 * 1024 * 1024)
+                                        (data["end"]["sum_received"]["bits_per_second"])
+                                        / (8 * 1024 * 1024)
                                 ).__round__(3)
 
                                 append_vpn_transfer_list(
@@ -469,11 +466,8 @@ class PerformanceService(Service):
         computation_state_client[client_ip] = State.FINISHED
 
         # keep running - nodes may want to compute on this node
-        # while len(completion_state) < (len(network_addresses) - 1) or not all(
-        #         [len(c) >= (len(network_addresses) - 1) for c in completion_state.values()]
-        # ):
         while not all(
-            [client_state == State.FINISHED for client_state in computation_state_client.values()]
+                [client_state == State.FINISHED for client_state in computation_state_client.values()]
         ):
             await asyncio.sleep(1)
 
@@ -484,7 +478,7 @@ class PerformanceService(Service):
 
 
 def append_vpn_transfer_list(
-    client, server, bandwidth_sender_mb_s=None, bandwidth_receiver_mb_s=None
+        client, server, bandwidth_sender_mb_s=None, bandwidth_receiver_mb_s=None
 ):
     vpn_transfer_list.append(
         {
@@ -498,7 +492,7 @@ def append_vpn_transfer_list(
 
 
 def append_vpn_ping_list(
-    client, server, packet_loss_percentage, rtt_min_ms, rtt_avg_ms, rtt_max_ms
+        client, server, packet_loss_percentage, rtt_min_ms, rtt_avg_ms, rtt_max_ms
 ):
     vpn_ping_list.append(
         {
@@ -538,23 +532,23 @@ def parse_scp_result_download(result) -> float:
 
 
 async def main(
-    subnet_tag,
-    payment_driver,
-    payment_network,
-    num_instances,
-    running_time,
-    transfer,
-    transfer_file_size,
-    vpn_ping,
-    ping_count,
-    vpn_transfer,
-    scp,
-    scp_transfer_file_size,
-    cmd_output_count,
-    cmd_output_size,
-    download_json,
-    output_dir,
-    instances=None,
+        subnet_tag,
+        payment_driver,
+        payment_network,
+        num_instances,
+        running_time,
+        transfer,
+        transfer_file_size,
+        vpn_ping,
+        ping_count,
+        vpn_transfer,
+        scp,
+        scp_transfer_file_size,
+        cmd_output_count,
+        cmd_output_size,
+        download_json,
+        output_dir,
+        instances=None,
 ):
     strategy = LeastExpensiveLinearPayuMS()
 
@@ -571,11 +565,11 @@ async def main(
         strategy = ProviderFilter(strategy, lambda provider_id: provider_id in first_n_elements)
 
     async with Golem(
-        budget=20.0,
-        subnet_tag=subnet_tag,
-        payment_driver=payment_driver,
-        payment_network=payment_network,
-        strategy=strategy,
+            budget=20.0,
+            subnet_tag=subnet_tag,
+            payment_driver=payment_driver,
+            payment_network=payment_network,
+            strategy=strategy,
     ) as golem:
         print_env_info(golem)
 
@@ -603,9 +597,9 @@ async def main(
             network=network,
             num_instances=num_instances,
             expiration=datetime.now(timezone.utc)
-            + STARTING_TIMEOUT
-            + EXPIRATION_MARGIN
-            + timedelta(seconds=running_time),
+                       + STARTING_TIMEOUT
+                       + EXPIRATION_MARGIN
+                       + timedelta(seconds=running_time),
         )
 
         def event_consumer(event: "yapapi.events.AgreementTerminated"):
@@ -622,8 +616,8 @@ async def main(
                                 completed_set.remove(ip_fail_provider)
                         if ip_fail_provider in current_computation.keys():
                             if (
-                                computation_state_client[current_computation[ip_fail_provider]]
-                                != State.FINISHED
+                                    computation_state_client[current_computation[ip_fail_provider]]
+                                    != State.FINISHED
                             ):
                                 computation_state_client[
                                     current_computation[ip_fail_provider]
@@ -639,14 +633,14 @@ async def main(
         start_time = datetime.now()
 
         while (
-            datetime.now() < start_time + timedelta(seconds=running_time)
-            and len(computation_state_client) == 0
-            or not all(
-                [
-                    client_state == State.FINISHED
-                    for client_state in computation_state_client.values()
-                ]
-            )
+                datetime.now() < start_time + timedelta(seconds=running_time)
+                and len(computation_state_client) == 0
+                or not all(
+            [
+                client_state == State.FINISHED
+                for client_state in computation_state_client.values()
+            ]
+        )
         ):
             try:
                 await asyncio.sleep(10)
