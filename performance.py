@@ -58,9 +58,6 @@ current_computation = {}
 completion_counter = {}
 
 
-# closed = []
-
-
 class State(Enum):
     IDLE = 0
     COMPUTING = 1
@@ -469,9 +466,6 @@ class PerformanceService(Service):
         computation_state_client[client_ip] = State.FINISHED
 
         # keep running - nodes may want to compute on this node
-        # while len(completion_state) < (len(network_addresses) - 1) or not all(
-        #         [len(c) >= (len(network_addresses) - 1) for c in completion_state.values()]
-        # ):
         while not all(
             [client_state == State.FINISHED for client_state in computation_state_client.values()]
         ):
