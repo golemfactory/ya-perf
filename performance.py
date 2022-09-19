@@ -132,7 +132,7 @@ class PerformanceService(Service):
                 script.run(
                     "/bin/bash",
                     "-c",
-                    f"truncate -s {self.scp_transfer_file_size}M /golem/dummy.dat",
+                    f"truncate -s {self.scp_transfer_file_size}M /golem/output/dummy.dat",
                 )
             yield script
         except Exception as error:
@@ -413,7 +413,7 @@ class PerformanceService(Service):
                             future_result = script.run(
                                 "/bin/bash",
                                 "-c",
-                                f"scp -v /golem/dummy.dat root@{server_ip}:/golem/upload",
+                                f"scp -v /golem/output/dummy.dat root@{server_ip}:/golem/output/upload",
                             )
 
                             yield script
@@ -426,7 +426,7 @@ class PerformanceService(Service):
                             future_result = script.run(
                                 "/bin/bash",
                                 "-c",
-                                f"scp -v root@{server_ip}:/golem/dummy.dat /golem/download",
+                                f"scp -v root@{server_ip}:/golem/output/dummy.dat /golem/output/download",
                             )
                             yield script
                             result = (await future_result).stderr
