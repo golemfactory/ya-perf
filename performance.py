@@ -565,7 +565,7 @@ async def main(
         strategy = ProviderFilter(strategy, lambda provider_id: provider_id in first_n_elements)
 
     async with Golem(
-        budget=20.0,
+        budget=2.0,
         subnet_tag=subnet_tag,
         payment_driver=payment_driver,
         payment_network=payment_network,

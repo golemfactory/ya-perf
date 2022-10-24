@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/local/bin/bash
 
 DEFAULT_SIZE="100M"
 
@@ -144,6 +144,8 @@ function transfer() {
         to_port="${ADDR[1]}"
     done <<< "${to}"
 
+    echo "${from_host} ${to_host}"
+
     ssh -p "${from_port}" "${from_host}" "truncate -s ${size} ${src_path}" > /dev/null
 
     result=$(scp -v -3 "scp://${from}/${src_path}" "scp://${to}/${dst_path}" 2>&1 | grep "Bytes per second" | head -n1)
@@ -192,7 +194,7 @@ function main() {
     declare -a p_yamls=()
     declare -a p_dirs=()
 
-    declare -a nodes=()
+    declare -A nodes=()
     
     while [[ "$#" -gt 0 ]]; do
         case $1 in
